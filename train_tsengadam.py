@@ -240,6 +240,8 @@ while n_gen_update < N_ITER:
 
         if (n_iteration_t+1) % 2 != 0:
             dis_optimizer.extrapolation()
+            for p in dis.parameters():
+                p.data.clamp_(-CLIP, CLIP)
         else:
             dis_optimizer.step()
 
@@ -264,9 +266,7 @@ while n_gen_update < N_ITER:
         for p in dis.parameters():
             p.requires_grad = True
 
-        if MODE == 'wgan' and not GRADIENT_PENALTY:
-            for p in dis.parameters():
-                p.data.clamp_(-CLIP, CLIP)
+        # if MODE == 'wgan' and not GRADIENT_PENALTY:
 
         total_time += time.time() - _t
 
