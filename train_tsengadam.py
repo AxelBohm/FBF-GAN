@@ -240,10 +240,10 @@ while n_gen_update < N_ITER:
 
         if (n_iteration_t+1) % 2 != 0:
             dis_optimizer.extrapolation()
-            for p in dis.parameters():
-                p.data.clamp_(-CLIP, CLIP)
         else:
             dis_optimizer.step()
+            for p in dis.parameters():
+                p.data.clamp_(-CLIP, CLIP)
 
         for p in gen.parameters():
             p.requires_grad = True
