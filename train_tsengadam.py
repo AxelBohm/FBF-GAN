@@ -259,8 +259,8 @@ while n_gen_update < N_ITER:
             n_gen_update += 1
             gen_optimizer.step()
             for j, param in enumerate(gen.parameters()):
-                gen_param_avg[j] = gen_param_avg[j]*n_gen_update/(n_gen_update+1.)
-                + param.data.clone()/(n_gen_update+1.)
+                gen_param_avg[j] = gen_param_avg[j]*n_gen_update/(n_gen_update+1.) \
+                    + param.data.clone()/(n_gen_update+1.)
                 gen_param_ema[j] = gen_param_ema[j]*BETA_EMA + param.data.clone()*(1-BETA_EMA)
 
         for p in dis.parameters():
