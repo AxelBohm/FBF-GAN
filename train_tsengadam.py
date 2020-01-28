@@ -148,8 +148,7 @@ if not os.path.exists(os.path.join(OUTPUT_PATH, 'gen')):
 
 if INCEPTION_SCORE_FLAG:
 
-    import torchvision.transforms.functional as TF
-    sys.path.insert(1,'./inception-score-pytorch')
+    sys.path.insert(1, './inception-score-pytorch')
     from inception_score import inception_score
 
     def get_inception_score():
@@ -161,7 +160,6 @@ if INCEPTION_SCORE_FLAG:
 
         all_samples = np.concatenate(all_samples, axis=0)
         return inception_score(torch.from_numpy(all_samples), resize=True, cuda=True)
-
 
     inception_f = open(os.path.join(OUTPUT_PATH, 'inception.csv'), 'ab')
     inception_writter = csv.writer(inception_f)
