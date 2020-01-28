@@ -38,7 +38,7 @@ import os
 import json
 import csv
 # import shutil
-# import sys
+import sys
 
 import models
 import utils
@@ -147,20 +147,21 @@ if not os.path.exists(os.path.join(OUTPUT_PATH, 'gen')):
     os.makedirs(os.path.join(OUTPUT_PATH, 'gen'))
 
 if INCEPTION_SCORE_FLAG:
-    import tflib
-    import tflib.inception_score
+
+    import torchvision.transforms.functional as TF
+    sys.path.insert(1,'./inception-score-pytorch')
+    from inception_score import inception_score
 
     def get_inception_score():
         all_samples = []
         samples = torch.randn(N_SAMPLES, N_LATENT)
         for i in xrange(0, N_SAMPLES, 100):
-            samples_100 = samples[i:i+100].cuda(0)
-            all_samples.append(gen(samples_100).cpu().data.numpy())
+            batch_samples = samples[i:i+100].cuda(0)
+            all_samples.append(gen(batch_samples).cpu().data.numpy())
 
         all_samples = np.concatenate(all_samples, axis=0)
-        all_samples = np.multiply(np.add(np.multiply(all_samples, 0.5), 0.5), 255).astype('int32')
-        all_samples = all_samples.reshape((-1, N_CHANNEL, RESOLUTION, RESOLUTION)).transpose(0, 2, 3, 1)
-        return tflib.inception_score.get_inception_score(list(all_samples))
+        return inception_score(torch.from_numpy(all_samples), resize=True, cuda=True)
+
 
     inception_f = open(os.path.join(OUTPUT_PATH, 'inception.csv'), 'ab')
     inception_writter = csv.writer(inception_f)
