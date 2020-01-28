@@ -23,10 +23,7 @@
 # written by Hugo Berard (berard.hugo@gmail.com) while at Facebook.
 
 import torch
-import torch.nn as nn
-import torch.nn.functional as F
-from torch.autograd import Function, Variable, grad
-import torch.optim as optim
+from torch.autograd import Variable
 import time
 import torchvision
 import torchvision.transforms as transforms
@@ -35,8 +32,6 @@ import argparse
 import os
 import json
 import csv
-import shutil
-import sys
 
 import models
 import utils
@@ -46,18 +41,18 @@ parser = argparse.ArgumentParser()
 parser.add_argument('output')
 parser.add_argument('--model', choices=('resnet', 'dcgan'), default='resnet')
 parser.add_argument('--cuda', action='store_true')
-parser.add_argument('-bs' ,'--batch-size', default=64, type=int)
+parser.add_argument('-bs', '--batch-size', default=64, type=int)
 parser.add_argument('--num-iter', default=500000, type=int)
 parser.add_argument('-lrd', '--learning-rate-dis', default=5e-4, type=float)
 parser.add_argument('-lrg', '--learning-rate-gen', default=5e-5, type=float)
-parser.add_argument('-b1' ,'--beta1', default=0.5, type=float)
-parser.add_argument('-b2' ,'--beta2', default=0.9, type=float)
+parser.add_argument('-b1', '--beta1', default=0.5, type=float)
+parser.add_argument('-b2', '--beta2', default=0.9, type=float)
 parser.add_argument('-ema', default=0.9999, type=float)
-parser.add_argument('-nz' ,'--num-latent', default=128, type=int)
-parser.add_argument('-nfd' ,'--num-filters-dis', default=128, type=int)
-parser.add_argument('-nfg' ,'--num-filters-gen', default=128, type=int)
+parser.add_argument('-nz', '--num-latent', default=128, type=int)
+parser.add_argument('-nfd', '--num-filters-dis', default=128, type=int)
+parser.add_argument('-nfg', '--num-filters-gen', default=128, type=int)
 parser.add_argument('-gp', '--gradient-penalty', default=10, type=float)
-parser.add_argument('-m', '--mode', choices=('gan','ns-gan', 'wgan'), default='wgan')
+parser.add_argument('-m', '--mode', choices=('gan', 'ns-gan', 'wgan'), default='wgan')
 parser.add_argument('-c', '--clip', default=0.01, type=float)
 parser.add_argument('-d', '--distribution', choices=('normal', 'uniform'), default='normal')
 parser.add_argument('--batchnorm-dis', action='store_true')
@@ -89,7 +84,8 @@ if args.default:
 
 BATCH_SIZE = args.batch_size
 N_ITER = args.num_iter
-LEARNING_RATE_G = args.learning_rate_gen # It is really important to set different learning rates for the discriminator and generator
+# It is really important to set different learning rates for the discriminator and generator
+LEARNING_RATE_G = args.learning_rate_gen
 LEARNING_RATE_D = args.learning_rate_dis
 BETA_1 = args.beta1
 BETA_2 = args.beta2
@@ -115,9 +111,14 @@ n_dis_update = 0
 total_time = 0
 
 if GRADIENT_PENALTY:
-    OUTPUT_PATH = os.path.join(OUTPUT_PATH, '%s_%s-gp'%(MODEL, MODE), '%s/lrd=%.1e_lrg=%.1e/s%i/%i'%('extra_adam', LEARNING_RATE_D, LEARNING_RATE_G, SEED, int(time.time())))
+    OUTPUT_PATH = os.path.join(OUTPUT_PATH, '%s_%s-gp' % (MODEL, MODE),
+                               '%s/lrd=%.1e_lrg=%.1e/s%i/%i' % ('extra_adam',
+                                                                LEARNING_RATE_D, LEARNING_RATE_G, SEED,
+                                                                int(time.time())))
 else:
-    OUTPUT_PATH = os.path.join(OUTPUT_PATH, '%s_%s'%(MODEL, MODE), '%s/lrd=%.1e_lrg=%.1e/s%i/%i'%('extra_adam', LEARNING_RATE_D, LEARNING_RATE_G, SEED, int(time.time())))
+    OUTPUT_PATH = os.path.join(OUTPUT_PATH, '%s_%s' % (MODEL, MODE),
+                               '%s/lrd=%.1e_lrg=%.1e/s%i/%i' % ('extra_adam', LEARNING_RATE_D,
+                                                                LEARNING_RATE_G, SEED, int(time.time())))
 
 if TENSORBOARD_FLAG:
     from tensorboardX import SummaryWriter
@@ -141,6 +142,7 @@ if not os.path.exists(os.path.join(OUTPUT_PATH, 'gen')):
 if INCEPTION_SCORE_FLAG:
     import tflib
     import tflib.inception_score
+
     def get_inception_score():
         all_samples = []
         samples = torch.randn(N_SAMPLES, N_LATENT)
@@ -229,7 +231,7 @@ while n_gen_update < N_ITER:
         dis_optimizer.zero_grad()
         dis_loss.backward(retain_graph=True)
 
-        if (n_iteration_t+1)%2 != 0:
+        if (n_iteration_t+1) % 2 != 0:
             dis_optimizer.extrapolation()
         else:
             dis_optimizer.step()
@@ -242,32 +244,33 @@ while n_gen_update < N_ITER:
         gen_optimizer.zero_grad()
         gen_loss.backward()
 
-        if (n_iteration_t+1)%2 != 0:
+        if (n_iteration_t+1) % 2 != 0:
             gen_optimizer.extrapolation()
         else:
             n_gen_update += 1
             gen_optimizer.step()
             for j, param in enumerate(gen.parameters()):
-                gen_param_avg[j] = gen_param_avg[j]*n_gen_update/(n_gen_update+1.) + param.data.clone()/(n_gen_update+1.)
-                gen_param_ema[j] = gen_param_ema[j]*BETA_EMA+ param.data.clone()*(1-BETA_EMA)
+                gen_param_avg[j] = gen_param_avg[j]*n_gen_update/(n_gen_update+1.) + \
+                    param.data.clone()/(n_gen_update+1.)
+                gen_param_ema[j] = gen_param_ema[j]*BETA_EMA + param.data.clone()*(1-BETA_EMA)
 
         for p in dis.parameters():
             p.requires_grad = True
 
-        if MODE =='wgan' and not GRADIENT_PENALTY:
+        if MODE == 'wgan' and not GRADIENT_PENALTY:
             for p in dis.parameters():
                 p.data.clamp_(-CLIP, CLIP)
 
         total_time += time.time() - _t
 
-        if (n_iteration_t+1)%2 == 0:
+        if (n_iteration_t+1) % 2 == 0:
 
             avg_loss_D += dis_loss.item()*len(x_true)
             avg_loss_G += gen_loss.item()*len(x_true)
             avg_penalty += penalty.item()*len(x_true)
             num_samples += len(x_true)
 
-            if n_gen_update%EVAL_FREQ == 1:
+            if n_gen_update % EVAL_FREQ == 1:
                 if INCEPTION_SCORE_FLAG:
                     gen_inception_score = get_inception_score()[0]
 
@@ -277,9 +280,12 @@ while n_gen_update < N_ITER:
                     if TENSORBOARD_FLAG:
                         writer.add_scalar('inception_score', gen_inception_score, n_gen_update)
 
-
-                torch.save({'args': vars(args), 'n_gen_update': n_gen_update, 'total_time': total_time, 'state_gen': gen.state_dict(), 'gen_param_avg': gen_param_avg, 'gen_param_ema': gen_param_ema}, os.path.join(OUTPUT_PATH, "checkpoints/%i.state"%n_gen_update))
-
+                torch.save({'args': vars(args), 'n_gen_update': n_gen_update,
+                            'total_time': total_time, 'state_gen':
+                            gen.state_dict(), 'gen_param_avg': gen_param_avg,
+                            'gen_param_ema': gen_param_ema},
+                           os.path.join(OUTPUT_PATH, "checkpoints/%i.state" %
+                                        n_gen_update))
 
         n_iteration_t += 1
 
@@ -287,7 +293,8 @@ while n_gen_update < N_ITER:
     avg_loss_D /= num_samples
     avg_penalty /= num_samples
 
-    print 'Iter: %i, Loss Generator: %.4f, Loss Discriminator: %.4f, Penalty: %.2e, IS: %.2f, Time: %.4f'%(n_gen_update, avg_loss_G, avg_loss_D, avg_penalty, gen_inception_score, time.time() - t)
+    print 'Iter: %i, Loss Generator: %.4f, Loss Discriminator: %.4f, Penalty: %.2e, IS: %.2f, Time: %.4f' % (
+        n_gen_update, avg_loss_G, avg_loss_D, avg_penalty, gen_inception_score, time.time() - t)
 
     f_writter.writerow((n_gen_update, avg_loss_G, avg_loss_D, avg_penalty, time.time() - t))
     f.flush()
