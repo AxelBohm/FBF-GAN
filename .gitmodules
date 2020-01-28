@@ -1,0 +1,3 @@
+[submodule "inception-score-pytorch"]
+	path = inception-score-pytorch
+	url = https://github.com/sbarratt/inception-score-pytorch.git
