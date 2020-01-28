@@ -116,12 +116,12 @@ total_time = 0
 if GRADIENT_PENALTY:
     OUTPUT_PATH = os.path.join(OUTPUT_PATH, '%s_%s-gp' % (MODEL, MODE),
                                '%s/lrd=%.1e_lrg=%.1e/s%i/%i' %
-                               ('optimisticadam', LEARNING_RATE_D,
+                               ('aybatadam', LEARNING_RATE_D,
                                 LEARNING_RATE_G, SEED, int(time.time())))
 else:
     OUTPUT_PATH = os.path.join(OUTPUT_PATH, '%s_%s' % (MODEL, MODE),
                                '%s/lrd=%.1e_lrg=%.1e/s%i/%i' %
-                               ('optimisticadam', LEARNING_RATE_D,
+                               ('aybatadam', LEARNING_RATE_D,
                                 LEARNING_RATE_G, SEED, int(time.time())))
 
 if TENSORBOARD_FLAG:
