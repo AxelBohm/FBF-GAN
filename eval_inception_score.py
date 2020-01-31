@@ -22,12 +22,9 @@
 
 import models
 import argparse
-import os
 import torch
-from torch.autograd import Variable
 import numpy as np
-import csv
-import glob
+from inception_score_pytorch.inception_score import inception_score as compute_IS
 
 parser = argparse.ArgumentParser()
 parser.add_argument('input')
@@ -49,23 +46,21 @@ N_LATENT = args.num_latent
 N_FILTERS_G = args.num_filters_gen
 BATCH_NORM_G = True
 
-print "Init..."
-import tflib
-import tflib.inception_score
+
 def get_inception_score():
     all_samples = []
     samples = torch.randn(NUM_SAMPLES, N_LATENT)
     for i in xrange(0, NUM_SAMPLES, BATCH_SIZE):
-        samples_100 = samples[i:i+BATCH_SIZE]
+        batch_samples = samples[i:i+BATCH_SIZE]
         if CUDA:
-            samples_100 = samples_100.cuda(0)
-        all_samples.append(gen(samples_100).cpu().data.numpy())
+            batch_samples = batch_samples.cuda(0)
+        all_samples.append(gen(batch_samples).cpu().data.numpy())
 
     all_samples = np.concatenate(all_samples, axis=0)
-    all_samples = np.multiply(np.add(np.multiply(all_samples, 0.5), 0.5), 255).astype('int32')
-    all_samples = all_samples.reshape((-1, N_CHANNEL, RESOLUTION, RESOLUTION)).transpose(0, 2, 3, 1)
-    return tflib.inception_score.get_inception_score(list(all_samples))
+    return compute_IS(torch.from_numpy(all_samples), resize=True, cuda=True)
 
+
+print "Init..."
 if MODEL == "resnet":
     gen = models.ResNet32Generator(N_LATENT, N_CHANNEL, N_FILTERS_G, BATCH_NORM_G)
 elif MODEL == "dcgan":
@@ -90,4 +85,4 @@ if CUDA:
 inception_score_ema = get_inception_score()[0]
 
 
-print 'IS: %.2f, IS Avg: %.2f, IS EMA: %.2f'%(inception_score, inception_score_avg, inception_score_ema)
+print 'IS: %.2f, IS Avg: %.2f, IS EMA: %.2f' % (inception_score, inception_score_avg, inception_score_ema)
