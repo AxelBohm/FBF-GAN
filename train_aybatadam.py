@@ -272,12 +272,10 @@ while n_gen_update < N_ITER:
                 if TENSORBOARD_FLAG:
                     writer.add_scalar('inception_score', gen_inception_score, n_gen_update)
 
-                    torch.save({'args': vars(args), 'n_gen_update':
-                                n_gen_update, 'total_time': total_time,
-                                'state_gen': gen.state_dict(), 'gen_param_avg':
-                                gen_param_avg, 'gen_param_ema': gen_param_ema},
-                               os.path.join(OUTPUT_PATH, "checkpoints/%i.state"
-                                            % n_gen_update))
+            torch.save({'args': vars(args), 'n_gen_update': n_gen_update,
+                        'total_time': total_time, 'state_gen': gen.state_dict(),
+                        'gen_param_avg': gen_param_avg, 'gen_param_ema':
+                        gen_param_ema}, os.path.join(OUTPUT_PATH, "checkpoints/%i.state" % n_gen_update))
 
         n_iteration_t += 1
 
