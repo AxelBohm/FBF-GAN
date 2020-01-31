@@ -146,8 +146,7 @@ if not os.path.exists(os.path.join(OUTPUT_PATH, 'gen')):
 
 if INCEPTION_SCORE_FLAG:
 
-    sys.path.insert(1, './inception-score-pytorch')
-    from inception_score import inception_score
+    from inception_score_pytorch.inception_score import inception_score
 
     def get_inception_score():
         all_samples = []
