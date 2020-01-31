@@ -22,12 +22,8 @@
 
 import models
 import argparse
-import os
 import torch
-from torch.autograd import Variable
 import numpy as np
-import csv
-import glob
 
 parser = argparse.ArgumentParser()
 parser.add_argument('input')
@@ -62,6 +58,8 @@ fid.create_inception_graph(inception_path)  # load the graph into the current TF
 
 config = tf.ConfigProto()
 config.gpu_options.allow_growth = True
+
+
 def get_fid_score():
     all_samples = []
     samples = torch.randn(NUM_SAMPLES, N_LATENT)
@@ -81,6 +79,7 @@ def get_fid_score():
 
     fid_value = fid.calculate_frechet_distance(mu_gen, sigma_gen, mu_real, sigma_real)
     return fid_value
+
 
 if MODEL == "resnet":
     gen = models.ResNet32Generator(N_LATENT, N_CHANNEL, N_FILTERS_G, BATCH_NORM_G)
@@ -106,4 +105,4 @@ if CUDA:
 inception_score_ema = get_fid_score()
 
 
-print 'IS: %.2f, IS Avg: %.2f, IS EMA: %.2f'%(inception_score, inception_score_avg, inception_score_ema)
+print 'IS: %.2f, IS Avg: %.2f, IS EMA: %.2f' % (inception_score, inception_score_avg, inception_score_ema)
