@@ -24,6 +24,7 @@ import models
 import argparse
 import torch
 import numpy as np
+import time
 from inception_score_pytorch.inception_score import inception_score as compute_IS
 
 parser = argparse.ArgumentParser()
@@ -66,23 +67,33 @@ if MODEL == "resnet":
 elif MODEL == "dcgan":
     gen = models.DCGAN32Generator(N_LATENT, N_CHANNEL, N_FILTERS_G, batchnorm=BATCH_NORM_G)
 
+t_0 = time.time()
+t = t_0
 print "Eval..."
 gen.load_state_dict(checkpoint['state_gen'])
 if CUDA:
     gen.cuda(0)
 inception_score = get_inception_score()[0]
+s = time.time()
+print "Time: %.2f; done: IS" % (s - t)
+t = s
 
 for j, param in enumerate(gen.parameters()):
     param.data = checkpoint['gen_param_avg'][j]
 if CUDA:
     gen = gen.cuda(0)
 inception_score_avg = get_inception_score()[0]
+s = time.time()
+print "Time: %.2f; done: IS Avg" % (s - t)
+t = s
 
 for j, param in enumerate(gen.parameters()):
     param.data = checkpoint['gen_param_ema'][j]
 if CUDA:
     gen = gen.cuda(0)
 inception_score_ema = get_inception_score()[0]
-
+s = time.time()
+print "Time: %.2f; done: IS EMA" % (s - t)
 
 print 'IS: %.2f, IS Avg: %.2f, IS EMA: %.2f' % (inception_score, inception_score_avg, inception_score_ema)
+print "Total Time: %.2f" % (s - t_0)

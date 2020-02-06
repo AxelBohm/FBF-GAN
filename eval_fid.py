@@ -24,6 +24,7 @@ import models
 import argparse
 import torch
 import numpy as np
+import time
 
 parser = argparse.ArgumentParser()
 parser.add_argument('input')
@@ -86,23 +87,33 @@ if MODEL == "resnet":
 elif MODEL == "dcgan":
     gen = models.DCGAN32Generator(N_LATENT, N_CHANNEL, N_FILTERS_G, batchnorm=BATCH_NORM_G)
 
+t_0 = time.time()
+t = t_0
 print "Eval..."
 gen.load_state_dict(checkpoint['state_gen'])
 if CUDA:
     gen.cuda(0)
 inception_score = get_fid_score()
+s = time.time()
+print "Time: %.2f; done: FID" % (s - t)
+t = s
 
 for j, param in enumerate(gen.parameters()):
     param.data = checkpoint['gen_param_avg'][j]
 if CUDA:
     gen = gen.cuda(0)
 inception_score_avg = get_fid_score()
+s = time.time()
+print "Time: %.2f; done: FID Avg" % (s - t)
+t = s
 
 for j, param in enumerate(gen.parameters()):
     param.data = checkpoint['gen_param_ema'][j]
 if CUDA:
     gen = gen.cuda(0)
 inception_score_ema = get_fid_score()
+s = time.time()
+print "Time: %.2f; done: FID EMA" % (s - t)
 
-
-print 'IS: %.2f, IS Avg: %.2f, IS EMA: %.2f' % (inception_score, inception_score_avg, inception_score_ema)
+print 'FID: %.2f, FID Avg: %.2f, FID EMA: %.2f' % (inception_score, inception_score_avg, inception_score_ema)
+print "Total Time: %.2f" % (s - t_0)
