@@ -70,6 +70,10 @@ OUTPUT_PATH = args.output
 TENSORBOARD_FLAG = args.tensorboard
 INCEPTION_SCORE_FLAG = args.inception_score
 
+SEED = args.seed
+torch.manual_seed(SEED)
+np.random.seed(SEED)
+
 if args.default:
     if args.model == 'resnet' and args.gradient_penalty != 0:
         config = "config/default_resnet_wgangp_extraadam.json"
@@ -104,9 +108,6 @@ RESOLUTION = 32
 N_CHANNEL = 3
 START_EPOCH = 0
 EVAL_FREQ = 10000
-SEED = args.seed
-torch.manual_seed(SEED)
-np.random.seed(SEED)
 n_gen_update = 0
 n_dis_update = 0
 total_time = 0
