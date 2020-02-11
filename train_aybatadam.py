@@ -237,6 +237,7 @@ f_writter = csv.writer(f)
 print 'Training...'
 n_iteration_t = 0
 gen_inception_score = 0
+gen_fid_score = 0
 while n_gen_update < N_ITER:
     t = time.time()
     avg_loss_G = 0
