@@ -40,7 +40,7 @@ from optim import FBFAdam
 
 parser = argparse.ArgumentParser()
 parser.add_argument('output')
-parser.add_argument('--model', choices=('resnet', 'dcgan'), default='resnet')
+parser.add_argument('--model', choices=('resnet', 'dcgan'), default='dcgan')
 parser.add_argument('--cuda', action='store_true')
 parser.add_argument('-bs', '--batch-size', default=64, type=int)
 parser.add_argument('--num-iter', default=500000, type=int)
@@ -52,7 +52,7 @@ parser.add_argument('-ema', default=0.9999, type=float)
 parser.add_argument('-nz', '--num-latent', default=128, type=int)
 parser.add_argument('-nfd', '--num-filters-dis', default=128, type=int)
 parser.add_argument('-nfg', '--num-filters-gen', default=128, type=int)
-parser.add_argument('-gp', '--gradient-penalty', default=10, type=float)
+parser.add_argument('-gp', '--gradient-penalty', default=0, type=float)
 parser.add_argument('-m', '--mode', choices=('gan', 'ns-gan', 'wgan'), default='wgan')
 parser.add_argument('-c', '--clip', default=0.01, type=float)
 parser.add_argument('-d', '--distribution', choices=('normal', 'uniform'), default='normal')
@@ -63,7 +63,7 @@ parser.add_argument('--inception-score', action='store_true')
 parser.add_argument('--default', action='store_true')
 args = parser.parse_args()
 
-CUDA = args.cuda
+CUDA = True #args.cuda
 MODEL = args.model
 GRADIENT_PENALTY = args.gradient_penalty
 OUTPUT_PATH = args.output
@@ -75,14 +75,8 @@ torch.manual_seed(SEED)
 np.random.seed(SEED)
 
 if args.default:
-    if args.model == 'resnet' and args.gradient_penalty != 0:
-        config = "config/default_resnet_wgangp_extraadam.json"
-    elif args.model == 'dcgan' and args.gradient_penalty != 0:
-        config = "config/default_dcgan_wgangp_extraadam.json"
-    elif args.model == 'dcgan' and args.gradient_penalty == 0:
-        config = "config/default_dcgan_wgan_extraadam.json"
-    else:
-        raise ValueError("Not default config available for this.")
+    config = "config/default_dcgan_wgan_fbfadam.json"
+
     with open(config) as f:
         data = json.load(f)
     args = argparse.Namespace(**data)
