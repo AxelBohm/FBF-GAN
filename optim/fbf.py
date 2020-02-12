@@ -56,7 +56,10 @@ class FBF(Optimizer):
                 if is_empty:
                     # Save the current parameters for the update step. Several extrapolation step can be made before
                     # each update but only the parameters before the first extrapolation step are saved.
-                    self.grads_copy.append(p.grad.data.clone())
+                    if p.grad is None:
+                        self.grads_copy.append(None)
+                    else:
+                        self.grads_copy.append(p.grad.data.clone())
                 if u is None:
                     continue
                 # Update the current parameters
