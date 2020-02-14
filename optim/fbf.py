@@ -40,7 +40,7 @@ class FBF(Optimizer):
     """
     def __init__(self, params, defaults):
         super(FBF, self).__init__(params, defaults)
-        self.grads_copy = []
+        self.updates_copy = []
 
     def update(self, p, group):
         raise NotImplementedError
@@ -49,7 +49,7 @@ class FBF(Optimizer):
         """Performs the extrapolation step and save a copy of the current parameters for the update step.
         """
         # Check if a copy of the parameters was already made.
-        is_empty = len(self.grads_copy) == 0
+        is_empty = len(self.updates_copy) == 0
         for group in self.param_groups:
             for p in group['params']:
                 u = self.update(p, group)
@@ -57,11 +57,11 @@ class FBF(Optimizer):
                 #each update but only the parameters before the first extrapolation step are saved.
                 if u is None:
                     if is_empty:
-                        self.grads_copy.append(None)
+                        self.updates_copy.append(None)
                     continue
                 else:
                     if is_empty:
-                        self.grads_copy.append(u.data.clone())
+                        self.updates_copy.append(u.data.clone())
                     # Update the current parameters
                     p.data.add_(u)
 
@@ -72,7 +72,7 @@ class FBF(Optimizer):
             closure (callable, optional): A closure that reevaluates the model
                 and returns the loss.
         """
-        if len(self.grads_copy) == 0:
+        if len(self.updates_copy) == 0:
             raise RuntimeError('Need to call extrapolation before calling step.')
 
         loss = None
@@ -88,13 +88,13 @@ class FBF(Optimizer):
                     continue
                 p.data.add_(u)
                 # Update the parameters saved during the extrapolation step
-                v = self.grads_copy[i]
+                v = self.updates_copy[i]
                 if v is None:
                     continue
                 p.data.add_(-v)
 
         # Free the old parameters
-        self.grads_copy = []
+        self.updates_copy = []
         return loss
 
 
