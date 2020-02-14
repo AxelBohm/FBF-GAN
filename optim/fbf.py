@@ -53,17 +53,17 @@ class FBF(Optimizer):
         for group in self.param_groups:
             for p in group['params']:
                 u = self.update(p, group)
-                if is_empty:
-                    # Save the current parameters for the update step. Several extrapolation step can be made before
-                    # each update but only the parameters before the first extrapolation step are saved.
-                    if p.grad is None:
-                        self.grads_copy.append(None)
-                    else:
-                        self.grads_copy.append(p.grad.data.clone())
+                #Save the current parameters for the update step. Several extrapolation step can be made before
+                #each update but only the parameters before the first extrapolation step are saved.
                 if u is None:
+                    if is_empty:
+                        self.grads_copy.append(None)
                     continue
-                # Update the current parameters
-                p.data.add_(u)
+                else:
+                    if is_empty:
+                        self.grads_copy.append(u.data.clone())
+                    # Update the current parameters
+                    p.data.add_(u)
 
     def step(self, closure=None):
         """Performs a single optimization step.
