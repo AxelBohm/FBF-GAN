@@ -6,7 +6,6 @@
    "num_iter":500000,
    "learning_rate_dis":5e-04,
    "learning_rate_gen":5e-05,
-   "seed":1318,
    "optimizer":"adam",
    "beta1":0.5,
    "beta2":0.9,

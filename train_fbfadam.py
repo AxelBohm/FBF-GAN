@@ -57,24 +57,39 @@ parser.add_argument('-m', '--mode', choices=('gan', 'ns-gan', 'wgan'), default='
 parser.add_argument('-c', '--clip', default=0.01, type=float)
 parser.add_argument('-d', '--distribution', choices=('normal', 'uniform'), default='normal')
 parser.add_argument('--batchnorm-dis', action='store_true')
-parser.add_argument('--seed', default=1234, type=int)
+parser.add_argument('--seed', default=1318, type=int)
 parser.add_argument('--tensorboard', action='store_true')
 parser.add_argument('--inception-score', action='store_true')
 parser.add_argument('--default', action='store_true')
+parser.add_argument('--test', action='store_true')
 args = parser.parse_args()
-
+print args
 CUDA = True #args.cuda
 MODEL = args.model
 GRADIENT_PENALTY = args.gradient_penalty
 OUTPUT_PATH = args.output
 TENSORBOARD_FLAG = args.tensorboard
 INCEPTION_SCORE_FLAG = args.inception_score
+CLIP = args.clip
+TEST = args.test
+DEFAULT = args.default
 
 SEED = args.seed
 torch.manual_seed(SEED)
 np.random.seed(SEED)
 
-if args.default:
+# It is really important to set different learning rates for the discriminator and generator
+LEARNING_RATE_G = args.learning_rate_gen
+LEARNING_RATE_D = args.learning_rate_dis
+
+if TEST:
+    config = "config/hyperparams_test_dcgan_wgan_fbfadam.json"
+
+    with open(config) as f:
+        data = json.load(f)
+    args = argparse.Namespace(**data)
+
+if DEFAULT:
     config = "config/default_dcgan_wgan_fbfadam.json"
 
     with open(config) as f:
@@ -83,9 +98,6 @@ if args.default:
 
 BATCH_SIZE = args.batch_size
 N_ITER = args.num_iter
-# It is really important to set different learning rates for the discriminator and generator
-LEARNING_RATE_G = args.learning_rate_gen
-LEARNING_RATE_D = args.learning_rate_dis
 BETA_1 = args.beta1
 BETA_2 = args.beta2
 BETA_EMA = args.ema
@@ -93,7 +105,6 @@ N_LATENT = args.num_latent
 N_FILTERS_G = args.num_filters_gen
 N_FILTERS_D = args.num_filters_dis
 MODE = args.mode
-CLIP = args.clip
 DISTRIBUTION = args.distribution
 BATCH_NORM_G = True
 BATCH_NORM_D = args.batchnorm_dis
