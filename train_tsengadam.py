@@ -120,8 +120,8 @@ n_dis_update = 0
 total_time = 0
 
 if BOTH_PROJECTIONS:
-    OUTPUT_PATH = os.path.join(OUTPUT_PATH, '%s_%s-bp' % (MODEL, MODE),
-                               '%s/lrd=%.1e_lrg=%.1e/s%i/%i' % ('tseng_adam',
+    OUTPUT_PATH = os.path.join(OUTPUT_PATH, '%s_%s' % (MODEL, MODE),
+                               '%s/lrd=%.1e_lrg=%.1e/s%i/%i' % ('tseng_adam_bp',
                                                                 LEARNING_RATE_D, LEARNING_RATE_G, SEED,
                                                                 int(time.time())))
 else:
