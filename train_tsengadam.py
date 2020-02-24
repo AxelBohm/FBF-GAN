@@ -21,14 +21,9 @@
 # SOFTWARE.
 
 # written by Hugo Berard (berard.hugo@gmail.com) while at Facebook.
-# modifications by Axel Boehm(axel.boehm@univie.ac.at)
 
 import torch
-# import torch.nn as nn
-# import torch.nn.functional as F
-# from torch.autograd import Function, Variable, grad
 from torch.autograd import Variable
-# import torch.optim as optim
 import time
 import torchvision
 import torchvision.transforms as transforms
@@ -37,16 +32,15 @@ import argparse
 import os
 import json
 import csv
-# import shutil
 import sys
 
 import models
 import utils
-from optim import ExtraAdam
+from optim import FBFAdam
 
 parser = argparse.ArgumentParser()
 parser.add_argument('output')
-parser.add_argument('--model', choices=('resnet', 'dcgan'), default='resnet')
+parser.add_argument('--model', choices=('resnet', 'dcgan'), default='dcgan')
 parser.add_argument('--cuda', action='store_true')
 parser.add_argument('-bs', '--batch-size', default=64, type=int)
 parser.add_argument('--num-iter', default=500000, type=int)
@@ -58,46 +52,54 @@ parser.add_argument('-ema', default=0.9999, type=float)
 parser.add_argument('-nz', '--num-latent', default=128, type=int)
 parser.add_argument('-nfd', '--num-filters-dis', default=128, type=int)
 parser.add_argument('-nfg', '--num-filters-gen', default=128, type=int)
-parser.add_argument('-gp', '--gradient-penalty', default=10, type=float)
+parser.add_argument('-gp', '--gradient-penalty', default=0, type=float)
 parser.add_argument('-m', '--mode', choices=('gan', 'ns-gan', 'wgan'), default='wgan')
 parser.add_argument('-c', '--clip', default=0.01, type=float)
 parser.add_argument('-d', '--distribution', choices=('normal', 'uniform'), default='normal')
 parser.add_argument('--batchnorm-dis', action='store_true')
-parser.add_argument('--seed', default=1234, type=int)
+parser.add_argument('--seed', default=1318, type=int)
 parser.add_argument('--tensorboard', action='store_true')
 parser.add_argument('--inception-score', action='store_true')
 parser.add_argument('--default', action='store_true')
+parser.add_argument('--test', action='store_true')
+parser.add_argument('-bp', '--both-projections', action='store_true')
 args = parser.parse_args()
-
-CUDA = args.cuda
+print args
+CUDA = True #args.cuda
 MODEL = args.model
 GRADIENT_PENALTY = args.gradient_penalty
 OUTPUT_PATH = args.output
 TENSORBOARD_FLAG = args.tensorboard
 INCEPTION_SCORE_FLAG = args.inception_score
+CLIP = args.clip
+TEST = args.test
+DEFAULT = args.default
+BOTH_PROJECTIONS = args.both_projections
 
 SEED = args.seed
 torch.manual_seed(SEED)
 np.random.seed(SEED)
 
-if args.default:
-    if args.model == 'resnet' and args.gradient_penalty != 0:
-        config = "config/default_resnet_wgangp_extraadam.json"
-    elif args.model == 'dcgan' and args.gradient_penalty != 0:
-        config = "config/default_dcgan_wgangp_extraadam.json"
-    elif args.model == 'dcgan' and args.gradient_penalty == 0:
-        config = "config/default_dcgan_wgan_extraadam.json"
-    else:
-        raise ValueError("Not default config available for this.")
+# It is really important to set different learning rates for the discriminator and generator
+LEARNING_RATE_G = args.learning_rate_gen
+LEARNING_RATE_D = args.learning_rate_dis
+
+if TEST:
+    config = "config/hyperparams_test_dcgan_wgan_tsengadam.json"
+
+    with open(config) as f:
+        data = json.load(f)
+    args = argparse.Namespace(**data)
+
+if DEFAULT:
+    config = "config/default_dcgan_wgan_tsengadam.json"
+
     with open(config) as f:
         data = json.load(f)
     args = argparse.Namespace(**data)
 
 BATCH_SIZE = args.batch_size
 N_ITER = args.num_iter
-# It is really important to set different learning rates for the discriminator and generator
-LEARNING_RATE_G = args.learning_rate_gen
-LEARNING_RATE_D = args.learning_rate_dis
 BETA_1 = args.beta1
 BETA_2 = args.beta2
 BETA_EMA = args.ema
@@ -105,7 +107,6 @@ N_LATENT = args.num_latent
 N_FILTERS_G = args.num_filters_gen
 N_FILTERS_D = args.num_filters_dis
 MODE = args.mode
-CLIP = args.clip
 DISTRIBUTION = args.distribution
 BATCH_NORM_G = True
 BATCH_NORM_D = args.batchnorm_dis
@@ -118,8 +119,8 @@ n_gen_update = 0
 n_dis_update = 0
 total_time = 0
 
-if GRADIENT_PENALTY:
-    OUTPUT_PATH = os.path.join(OUTPUT_PATH, '%s_%s-gp' % (MODEL, MODE),
+if BOTH_PROJECTIONS:
+    OUTPUT_PATH = os.path.join(OUTPUT_PATH, '%s_%s-bp' % (MODEL, MODE),
                                '%s/lrd=%.1e_lrg=%.1e/s%i/%i' % ('tseng_adam',
                                                                 LEARNING_RATE_D, LEARNING_RATE_G, SEED,
                                                                 int(time.time())))
@@ -211,8 +212,9 @@ if CUDA:
 gen.apply(lambda x: utils.weight_init(x, mode='normal'))
 dis.apply(lambda x: utils.weight_init(x, mode='normal'))
 
-dis_optimizer = ExtraAdam(dis.parameters(), lr=LEARNING_RATE_D, betas=(BETA_1, BETA_2))
-gen_optimizer = ExtraAdam(gen.parameters(), lr=LEARNING_RATE_G, betas=(BETA_1, BETA_2))
+dis_optimizer = FBFAdam(dis.parameters(), lr=LEARNING_RATE_D, betas=(BETA_1, BETA_2))
+## for generator FBF and Extragradient is the same in theory (when no projection is involved)
+gen_optimizer = FBFAdam(gen.parameters(), lr=LEARNING_RATE_G, betas=(BETA_1, BETA_2))
 
 with open(os.path.join(OUTPUT_PATH, 'config.json'), 'wb') as f:
     json.dump(vars(args), f)
@@ -273,10 +275,14 @@ while n_gen_update < N_ITER:
 
         if (n_iteration_t+1) % 2 != 0:
             dis_optimizer.extrapolation()
+            if BOTH_PROJECTIONS and MODE == 'wgan' and not GRADIENT_PENALTY:
+                for p in dis.parameters():
+                    p.data.clamp_(-CLIP, CLIP)
         else:
             dis_optimizer.step()
-            for p in dis.parameters():
-                p.data.clamp_(-CLIP, CLIP)
+            if MODE == 'wgan' and not GRADIENT_PENALTY:
+                for p in dis.parameters():
+                    p.data.clamp_(-CLIP, CLIP)
 
         for p in gen.parameters():
             p.requires_grad = True
@@ -292,14 +298,13 @@ while n_gen_update < N_ITER:
             n_gen_update += 1
             gen_optimizer.step()
             for j, param in enumerate(gen.parameters()):
-                gen_param_avg[j] = gen_param_avg[j]*n_gen_update/(n_gen_update+1.) \
-                    + param.data.clone()/(n_gen_update+1.)
+                gen_param_avg[j] = gen_param_avg[j]*n_gen_update/(n_gen_update+1.) + \
+                    param.data.clone()/(n_gen_update+1.)
                 gen_param_ema[j] = gen_param_ema[j]*BETA_EMA + param.data.clone()*(1-BETA_EMA)
 
         for p in dis.parameters():
             p.requires_grad = True
 
-        # if MODE == 'wgan' and not GRADIENT_PENALTY:
 
         total_time += time.time() - _t
 
@@ -322,9 +327,11 @@ while n_gen_update < N_ITER:
                         writer.add_scalar('inception_score', gen_inception_score, n_gen_update)
 
                 torch.save({'args': vars(args), 'n_gen_update': n_gen_update,
-                            'total_time': total_time, 'state_gen': gen.state_dict(),
-                            'gen_param_avg': gen_param_avg, 'gen_param_ema': gen_param_ema},
-                           os.path.join(OUTPUT_PATH, "checkpoints/%i.state" % n_gen_update))
+                            'total_time': total_time, 'state_gen':
+                            gen.state_dict(), 'gen_param_avg': gen_param_avg,
+                            'gen_param_ema': gen_param_ema},
+                           os.path.join(OUTPUT_PATH, "checkpoints/%i.state" %
+                                        n_gen_update))
 
         n_iteration_t += 1
 

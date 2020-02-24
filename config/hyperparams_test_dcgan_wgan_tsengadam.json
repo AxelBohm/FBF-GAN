@@ -1,0 +1,19 @@
+{
+   "model":"dcgan",
+   "mode":"wgan",
+   "gradient_penalty":0,
+   "num_iter":500000,
+   "seed":2412,
+   "clip":0.01,
+   "optimizer":"adam",
+   "beta1":0.5,
+   "beta2":0.9,
+   "batch_size":64,
+   "ema":0.999,
+   "num_latent":128,
+   "batchnorm_dis":true,
+   "distribution":"normal",
+   "initialization":"normal",
+   "num_filters_gen":64,
+   "num_filters_dis":64
+}
