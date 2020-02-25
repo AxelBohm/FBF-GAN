@@ -62,6 +62,7 @@ parser.add_argument('--tensorboard', action='store_true')
 parser.add_argument('--inception-score', action='store_true')
 parser.add_argument('--default', action='store_true')
 parser.add_argument('--test', action='store_true')
+parser.add_argument('--inertia', default=0.0, type=float)
 args = parser.parse_args()
 print args
 CUDA = True #args.cuda
@@ -71,6 +72,7 @@ OUTPUT_PATH = args.output
 TENSORBOARD_FLAG = args.tensorboard
 INCEPTION_SCORE_FLAG = args.inception_score
 CLIP = args.clip
+INERTIA = args.inertia
 TEST = args.test
 DEFAULT = args.default
 
@@ -210,9 +212,9 @@ if CUDA:
 gen.apply(lambda x: utils.weight_init(x, mode='normal'))
 dis.apply(lambda x: utils.weight_init(x, mode='normal'))
 
-dis_optimizer = FBFAdam(dis.parameters(), lr=LEARNING_RATE_D, betas=(BETA_1, BETA_2))
+dis_optimizer = FBFAdam(dis.parameters(), lr=LEARNING_RATE_D, betas=(BETA_1, BETA_2), inertia = INERTIA)
 ## for generator FBF and Extragradient is the same in theory (when no projection is involved)
-gen_optimizer = FBFAdam(gen.parameters(), lr=LEARNING_RATE_G, betas=(BETA_1, BETA_2))
+gen_optimizer = FBFAdam(gen.parameters(), lr=LEARNING_RATE_G, betas=(BETA_1, BETA_2), inertia = INERTIA)
 
 with open(os.path.join(OUTPUT_PATH, 'config.json'), 'wb') as f:
     json.dump(vars(args), f)
