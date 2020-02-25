@@ -38,9 +38,13 @@ class FBF(Optimizer):
         defaults: (dict): a dict containing default values of optimization
             options (used when a parameter group doesn't specify them).
     """
-    def __init__(self, params, defaults):
+    def __init__(self, params, defaults, inertia):
         super(FBF, self).__init__(params, defaults)
         self.updates_copy = []
+        self.old_params_copy = []
+        if inertia < 0.0:
+            raise ValueError("Invalid inertia value: {}".format(inertia))
+        self.inertia = inertia
 
     def update(self, p, group):
         raise NotImplementedError
@@ -79,6 +83,8 @@ class FBF(Optimizer):
         if closure is not None:
             loss = closure()
 
+        have_inertia = self.inertia > 0.0
+        no_old = len(self.old_params_copy) == 0
         i = -1
         for group in self.param_groups:
             for p in group['params']:
@@ -92,6 +98,11 @@ class FBF(Optimizer):
                 if v is None:
                     continue
                 p.data.add_(-v)
+                if have_inertia:
+                    if no_old:
+                        self.old_params_copy.append(p.data.clone())
+                    else:
+                        p.data, self.old_params_copy[i] = (1 + self.inertia)*p.data - self.inertia*self.old_params_copy[i], p.data
 
         # Free the old parameters
         self.updates_copy = []
@@ -147,7 +158,7 @@ class FBFSGD(FBF):
         The Nesterov version is analogously modified.
     """
     def __init__(self, params, lr=required, momentum=0, dampening=0,
-                 weight_decay=0, nesterov=False):
+                 weight_decay=0, nesterov=False, inertia=0):
         if lr is not required and lr < 0.0:
             raise ValueError("Invalid learning rate: {}".format(lr))
         if momentum < 0.0:
@@ -159,7 +170,7 @@ class FBFSGD(FBF):
                         weight_decay=weight_decay, nesterov=nesterov)
         if nesterov and (momentum <= 0 or dampening != 0):
             raise ValueError("Nesterov momentum requires a momentum and zero dampening")
-        super(FBFSGD, self).__init__(params, defaults)
+        super(FBFSGD, self).__init__(params, defaults, inertia)
 
     def __setstate__(self, state):
         super(SGD, self).__setstate__(state)
@@ -210,7 +221,7 @@ class FBFAdam(FBF):
     """
 
     def __init__(self, params, lr=1e-3, betas=(0.9, 0.999), eps=1e-8,
-                 weight_decay=0, amsgrad=False):
+                 weight_decay=0, amsgrad=False, inertia=0):
         if not 0.0 <= lr:
             raise ValueError("Invalid learning rate: {}".format(lr))
         if not 0.0 <= eps:
@@ -221,7 +232,7 @@ class FBFAdam(FBF):
             raise ValueError("Invalid beta parameter at index 1: {}".format(betas[1]))
         defaults = dict(lr=lr, betas=betas, eps=eps, weight_decay=weight_decay,
                         amsgrad=amsgrad)
-        super(FBFAdam, self).__init__(params, defaults)
+        super(FBFAdam, self).__init__(params, defaults, inertia)
 
     def __setstate__(self, state):
         super(FBFAdam, self).__setstate__(state)
