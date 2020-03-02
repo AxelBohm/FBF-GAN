@@ -44,8 +44,8 @@ parser.add_argument('--model', choices=('resnet', 'dcgan'), default='dcgan')
 parser.add_argument('--cuda', action='store_true')
 parser.add_argument('-bs', '--batch-size', default=64, type=int)
 parser.add_argument('--num-iter', default=500000, type=int)
-parser.add_argument('-lrd', '--learning-rate-dis', default=5e-4, type=float)
-parser.add_argument('-lrg', '--learning-rate-gen', default=5e-5, type=float)
+parser.add_argument('-lrd', '--learning-rate-dis', default=2e-4, type=float)
+parser.add_argument('-lrg', '--learning-rate-gen', default=2e-5, type=float)
 parser.add_argument('-b1', '--beta1', default=0.5, type=float)
 parser.add_argument('-b2', '--beta2', default=0.9, type=float)
 parser.add_argument('-ema', default=0.9999, type=float)
@@ -64,7 +64,7 @@ parser.add_argument('--default', action='store_true')
 parser.add_argument('--test', action='store_true')
 parser.add_argument('--inertia', default=0.0, type=float)
 args = parser.parse_args()
-print args
+
 CUDA = True #args.cuda
 MODEL = args.model
 GRADIENT_PENALTY = args.gradient_penalty
@@ -80,10 +80,6 @@ SEED = args.seed
 torch.manual_seed(SEED)
 np.random.seed(SEED)
 
-# It is really important to set different learning rates for the discriminator and generator
-LEARNING_RATE_G = args.learning_rate_gen
-LEARNING_RATE_D = args.learning_rate_dis
-
 if TEST:
     config = "config/hyperparams_test_dcgan_wgan_fbfadam.json"
 
@@ -98,6 +94,10 @@ if DEFAULT:
         data = json.load(f)
     args = argparse.Namespace(**data)
 
+
+# It is really important to set different learning rates for the discriminator and generator
+LEARNING_RATE_G = args.learning_rate_gen
+LEARNING_RATE_D = args.learning_rate_dis
 BATCH_SIZE = args.batch_size
 N_ITER = args.num_iter
 BETA_1 = args.beta1
