@@ -55,6 +55,8 @@ parser.add_argument('-nfg', '--num-filters-gen', default=128, type=int)
 parser.add_argument('-gp', '--gradient-penalty', default=0, type=float)
 parser.add_argument('-m', '--mode', choices=('gan', 'ns-gan', 'wgan'), default='wgan')
 parser.add_argument('-c', '--clip', default=0.01, type=float)
+parser.add_argument('-p', '--prox', choices=('1norm'), default='1norm')
+parser.add_argument('-pp', '--prox-param', default=0, type=float)
 parser.add_argument('-d', '--distribution', choices=('normal', 'uniform'), default='normal')
 parser.add_argument('--batchnorm-dis', action='store_true')
 parser.add_argument('--seed', default=1318, type=int)
@@ -72,6 +74,8 @@ OUTPUT_PATH = args.output
 TENSORBOARD_FLAG = args.tensorboard
 INCEPTION_SCORE_FLAG = args.inception_score
 CLIP = args.clip
+PROX = args.prox
+PROX_PARAM = args.prox_param
 INERTIA = args.inertia
 TEST = args.test
 DEFAULT = args.default
@@ -123,6 +127,11 @@ if GRADIENT_PENALTY:
     OUTPUT_PATH = os.path.join(OUTPUT_PATH, '%s_%s-gp' % (MODEL, MODE),
                                '%s/lrd=%.1e_lrg=%.1e/inertia=%.2f/s%i/%i' % ('fbf_adam',
                                                                 LEARNING_RATE_D, LEARNING_RATE_G,
+                                                                INERTIA, SEED, int(time.time())))
+elif PROX_PARAM:
+    OUTPUT_PATH = os.path.join(OUTPUT_PATH, '%s_%s-prox' % (MODEL, MODE),
+                               '%s/lrd=%.1e_lrg=%.1e/pp=%.5f/inertia=%.2f/s%i/%i' % ('fbf_adam',
+                                                                LEARNING_RATE_D, LEARNING_RATE_G, PROX_PARAM,
                                                                 INERTIA, SEED, int(time.time())))
 else:
     OUTPUT_PATH = os.path.join(OUTPUT_PATH, '%s_%s' % (MODEL, MODE),
@@ -278,7 +287,13 @@ while n_gen_update < N_ITER:
             dis_optimizer.extrapolation()
             if MODE == 'wgan' and not GRADIENT_PENALTY:
                 for p in dis.parameters():
-                    p.data.clamp_(-CLIP, CLIP)
+                    if PROX_PARAM:
+                        if PROX == '1norm':
+                            p.data = utils.prox_1norm(p.data, PROX_PARAM)
+                        else:
+                            raise("not implemented")
+                    else:
+                        p.data.clamp_(-CLIP, CLIP)
         else:
             dis_optimizer.step()
 

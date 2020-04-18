@@ -26,6 +26,7 @@ import torch
 import torch.autograd as autograd
 import torch.nn as nn
 import numpy as np
+from torch import where, add, abs, zeros_like, ones_like
 
 def clip_weights(params, clip=0.01):
     for p in params:
@@ -64,3 +65,14 @@ def compute_gan_loss(p_true, p_gen, mode='gan', gen_flag=False):
         raise NotImplementedError()
 
     return loss
+
+
+def prox_1norm(data, lam):
+    """compute the proximal operator of ||.||_1 with stepsize $lam$
+    """
+    data = where(abs(data) <= lam, zeros_like(data), data)
+    data = where(data > lam, add(data, -lam, ones_like(data)), data)
+    data = where(data < -lam, add(data, lam, ones_like(data)), data)
+    # alternative to compute prox via Moreau decomposition
+    # p.data = torch.add(p.data, -l, torch.clamp(torch.mul(p.data, 1/l), -1, 1))
+    return data
