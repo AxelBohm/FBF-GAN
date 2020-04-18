@@ -297,10 +297,13 @@ while n_gen_update < N_ITER:
         avg_penalty += penalty.item()*len(x_true)
         num_samples += len(x_true)
 
-        if n_gen_update == 1 or n_gen_update % EVAL_FREQ == 0:
+        if n_gen_update % EVAL_FREQ == 1:
             if INCEPTION_SCORE_FLAG:
                 gen_inception_score = get_inception_score()[0]
-                gen_fid_score = get_fid_score()
+                try:
+                    gen_fid_score = get_fid_score()
+                except:
+                    gen_fid_score = -1
 
                 inception_writter.writerow((n_gen_update, gen_inception_score, gen_fid_score, total_time))
                 inception_f.flush()
