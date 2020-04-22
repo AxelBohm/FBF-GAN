@@ -131,7 +131,7 @@ if GRADIENT_PENALTY:
                                                                 INERTIA, SEED, int(time.time())))
 elif PROX_PARAM:
     OUTPUT_PATH = os.path.join(OUTPUT_PATH, '%s_%s-prox' % (MODEL, MODE),
-                               '%s/lrd=%.1e_lrg=%.1e/pp=%.5f/inertia=%.2f/s%i/%i' % ('fbf_adam',
+                               '%s/lrd=%.1e_lrg=%.1e/pp=%.1e/inertia=%.2f/s%i/%i' % ('fbf_adam',
                                                                 LEARNING_RATE_D, LEARNING_RATE_G, PROX_PARAM,
                                                                 INERTIA, SEED, int(time.time())))
 else:
