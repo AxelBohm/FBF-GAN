@@ -289,7 +289,7 @@ while n_gen_update < N_ITER:
                 for p in dis.parameters():
                     if PROX_PARAM:
                         if PROX == '1norm':
-                            p.data = utils.prox_1norm(p.data, PROX_PARAM)
+                            p.data = utils.prox_1norm(p.data, PROX_PARAM*LEARNING_RATE_D)
                         else:
                             raise("not implemented")
                     else:
