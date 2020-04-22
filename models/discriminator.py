@@ -34,7 +34,6 @@ class Discriminator(nn.Module):
         raise NotImplementedError()
 
     def get_penalty(self, x_true, x_gen):
-        x_true = x_true.view_as(x_gen)
         alpha = torch.rand((len(x_true),)+(1,)*(x_true.dim()-1))
         if x_true.is_cuda:
             alpha = alpha.cuda(x_true.get_device())
