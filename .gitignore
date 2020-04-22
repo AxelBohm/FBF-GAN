@@ -5,3 +5,5 @@ tmp
 *.pyc
 tflib/model/*
 .ipynb_checkpoints/*
+data/
+output/
