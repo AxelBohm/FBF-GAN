@@ -340,6 +340,11 @@ while n_gen_update < N_ITER:
                     inception_writter.writerow((n_gen_update, gen_inception_score, gen_fid_score, total_time))
                     inception_f.flush()
 
+                    # only generate images if IS is computed
+                    x_gen = gen(z_examples)
+                    x = utils.unormalize(x_gen)
+                    torchvision.utils.save_image(x.data, os.path.join(OUTPUT_PATH, 'gen/%i.png' % n_gen_update), 10)
+
                     if TENSORBOARD_FLAG:
                         writer.add_scalar('inception_score', gen_inception_score, n_gen_update)
 
@@ -362,10 +367,6 @@ while n_gen_update < N_ITER:
 
     f_writter.writerow((n_gen_update, avg_loss_G, avg_loss_D, avg_penalty, time.time() - t))
     f.flush()
-
-    x_gen = gen(z_examples)
-    x = utils.unormalize(x_gen)
-    torchvision.utils.save_image(x.data, os.path.join(OUTPUT_PATH, 'gen/%i.png' % n_gen_update), 10)
 
     if TENSORBOARD_FLAG:
         writer.add_scalar('loss_G', avg_loss_G, n_gen_update)
