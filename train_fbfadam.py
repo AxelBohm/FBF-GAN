@@ -21,6 +21,7 @@
 # SOFTWARE.
 
 # written by Hugo Berard (berard.hugo@gmail.com) while at Facebook.
+# modifications by Axel Böhm (axel.boehm@univie.ac.at) and Michael Sedlmayer (michael.sedlmayer@univie.ac.at)
 
 import torch
 from torch.autograd import Variable
