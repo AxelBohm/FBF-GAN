@@ -57,7 +57,7 @@ parser.add_argument('-gp', '--gradient-penalty', default=0, type=float)
 parser.add_argument('-m', '--mode', choices=('gan', 'ns-gan', 'wgan'), default='wgan')
 parser.add_argument('-c', '--clip', default=0.01, type=float)
 parser.add_argument('-p', '--prox', choices=('1norm'), default='1norm')
-parser.add_argument('-pp', '--prox-param', default=0, type=float)
+parser.add_argument('-rp', '--reg-param', default=0, type=float)
 parser.add_argument('-d', '--distribution', choices=('normal', 'uniform'), default='normal')
 parser.add_argument('--batchnorm-dis', action='store_true')
 parser.add_argument('--seed', default=1318, type=int)
@@ -76,7 +76,7 @@ TENSORBOARD_FLAG = args.tensorboard
 INCEPTION_SCORE_FLAG = args.inception_score
 CLIP = args.clip
 PROX = args.prox
-PROX_PARAM = args.prox_param
+REG_PARAM = args.reg_param
 INERTIA = args.inertia
 TEST = args.test
 DEFAULT = args.default
@@ -129,10 +129,10 @@ if GRADIENT_PENALTY:
                                '%s/lrd=%.1e_lrg=%.1e/inertia=%.2f/s%i/%i' % ('fbf_adam',
                                                                 LEARNING_RATE_D, LEARNING_RATE_G,
                                                                 INERTIA, SEED, int(time.time())))
-elif PROX_PARAM:
+elif REG_PARAM:
     OUTPUT_PATH = os.path.join(OUTPUT_PATH, '%s_%s-prox' % (MODEL, MODE),
-                               '%s/lrd=%.1e_lrg=%.1e/pp=%.1e/inertia=%.2f/s%i/%i' % ('fbf_adam',
-                                                                LEARNING_RATE_D, LEARNING_RATE_G, PROX_PARAM,
+                               '%s/lrd=%.1e_lrg=%.1e/rp=%.1e/inertia=%.2f/s%i/%i' % ('fbf_adam',
+                                                                LEARNING_RATE_D, LEARNING_RATE_G, REG_PARAM,
                                                                 INERTIA, SEED, int(time.time())))
 else:
     OUTPUT_PATH = os.path.join(OUTPUT_PATH, '%s_%s' % (MODEL, MODE),
@@ -248,6 +248,7 @@ f = open(os.path.join(OUTPUT_PATH, 'results.csv'), 'ab')
 f_writter = csv.writer(f)
 
 print 'Training...'
+numel_weights = sum(p.numel() for p in dis.parameters())
 n_iteration_t = 0
 gen_inception_score = 0
 gen_fid_score = 0
@@ -278,6 +279,9 @@ while n_gen_update < N_ITER:
         if GRADIENT_PENALTY:
             penalty = dis.get_penalty(x_true.data, x_gen.data)
             dis_loss += GRADIENT_PENALTY*penalty
+        if REG_PARAM:
+            L1_reg = dis.get_1norm() # won't be differentiated
+            dis_loss += L1_reg * REG_PARAM
 
         for p in gen.parameters():
             p.requires_grad = False
@@ -286,14 +290,16 @@ while n_gen_update < N_ITER:
 
         if (n_iteration_t+1) % 2 != 0:
             dis_optimizer.extrapolation()
-            if MODE == 'wgan' and not GRADIENT_PENALTY:
+            if MODE == 'wgan':
+                nonzeros = 0.
                 for p in dis.parameters():
-                    if PROX_PARAM:
+                    if REG_PARAM:
                         if PROX == '1norm':
-                            p.data = utils.prox_1norm(p.data, PROX_PARAM*LEARNING_RATE_D)
+                            p.data = utils.prox_1norm(p.data, REG_PARAM*LEARNING_RATE_D)
+                            nonzeros += p.nonzero().size(0)
                         else:
                             raise("not implemented")
-                    else:
+                    elif not GRADIENT_PENALTY:
                         p.data.clamp_(-CLIP, CLIP)
         else:
             dis_optimizer.step()
@@ -360,12 +366,20 @@ while n_gen_update < N_ITER:
     avg_loss_G /= num_samples
     avg_loss_D /= num_samples
     avg_penalty /= num_samples
+    nnz_perc = nonzeros/numel_weights
 
-    print 'Iter: %i, Loss Generator: %.4f, Loss Discriminator: %.4f, Penalty: %.2e, IS: %.2f, FID: %.2f, Time: %.4f' % (
-        n_gen_update, avg_loss_G, avg_loss_D, avg_penalty,
-        gen_inception_score, gen_fid_score, time.time() - t)
+    if REG_PARAM:
+        print 'Iter: %i, Loss Gen: %.4f, Loss Dis: %.4f, NNZ: %.2f, L1norm: %.2e, IS: %.2f, FID: %.2f, Time: %.4f' % (
+            n_gen_update, avg_loss_G, avg_loss_D, nnz_perc, L1_reg*REG_PARAM,
+            gen_inception_score, gen_fid_score, time.time() - t)
+        f_writter.writerow((n_gen_update, avg_loss_G, avg_loss_D, nnz_perc, avg_penalty, L1_reg.item()*REG_PARAM, time.time() - t))
+    else:
+        print 'Iter: %i, Loss Gen: %.4f, Loss Dis: %.4f, Penalty: %.2e, IS: %.2f, FID: %.2f, Time: %.4f' % (
+                n_gen_update, avg_loss_G, avg_loss_D, avg_penalty,
+                gen_inception_score, gen_fid_score, time.time() - t)
+        f_writter.writerow((n_gen_update, avg_loss_G, avg_loss_D, nnz_perc, avg_penalty, time.time() - t))
 
-    f_writter.writerow((n_gen_update, avg_loss_G, avg_loss_D, avg_penalty, time.time() - t))
+
     f.flush()
 
     if TENSORBOARD_FLAG:
