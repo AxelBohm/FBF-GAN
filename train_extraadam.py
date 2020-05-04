@@ -76,6 +76,12 @@ SEED = args.seed
 torch.manual_seed(SEED)
 np.random.seed(SEED)
 
+# It is really important to set different learning rates for the discriminator and generator
+LEARNING_RATE_G = args.learning_rate_gen
+LEARNING_RATE_D = args.learning_rate_dis
+PROX = args.prox
+REG_PARAM = args.reg_param
+
 if args.default:
     if args.model == 'resnet' and args.gradient_penalty != 0:
         config = "config/default_resnet_wgangp_extraadam.json"
@@ -91,9 +97,6 @@ if args.default:
 
 BATCH_SIZE = args.batch_size
 N_ITER = args.num_iter
-# It is really important to set different learning rates for the discriminator and generator
-LEARNING_RATE_G = args.learning_rate_gen
-LEARNING_RATE_D = args.learning_rate_dis
 BETA_1 = args.beta1
 BETA_2 = args.beta2
 BETA_EMA = args.ema
@@ -102,8 +105,6 @@ N_FILTERS_G = args.num_filters_gen
 N_FILTERS_D = args.num_filters_dis
 MODE = args.mode
 CLIP = args.clip
-PROX = args.prox
-REG_PARAM = args.reg_param
 DISTRIBUTION = args.distribution
 BATCH_NORM_G = True
 BATCH_NORM_D = args.batchnorm_dis

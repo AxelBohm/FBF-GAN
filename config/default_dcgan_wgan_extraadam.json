@@ -12,10 +12,8 @@
    "mode":"wgan",
    "seed":1318,
    "beta1":0.5,
-   "learning_rate_dis":5e-04,
    "distribution":"normal",
    "initialization":"normal",
-   "learning_rate_gen":5e-05,
    "num_filters_gen":64,
    "num_filters_dis":64
 }
