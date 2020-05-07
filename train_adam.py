@@ -21,6 +21,7 @@
 # SOFTWARE.
 
 # written by Hugo Berard (berard.hugo@gmail.com) while at Facebook.
+# modifications by Axel Böhm (axel.boehm@univie.ac.at) and Michael Sedlmayer (michael.sedlmayer@univie.ac.at)
 
 import torch
 import torch.nn as nn
@@ -58,6 +59,8 @@ parser.add_argument('-nfg' ,'--num-filters-gen', default=128, type=int)
 parser.add_argument('-gp', '--gradient-penalty', default=10, type=float)
 parser.add_argument('-m', '--mode', choices=('gan','ns-gan', 'wgan'), default='wgan')
 parser.add_argument('-c', '--clip', default=0.01, type=float)
+parser.add_argument('-p', '--prox', choices=('1norm'), default='1norm')
+parser.add_argument('-rp', '--reg-param', default=0, type=float)
 parser.add_argument('-d', '--distribution', choices=('normal', 'uniform'), default='normal')
 parser.add_argument('--batchnorm-dis', action='store_true')
 parser.add_argument('--seed', default=1234, type=int)
@@ -74,6 +77,14 @@ OUTPUT_PATH = args.output
 TENSORBOARD_FLAG = args.tensorboard
 INCEPTION_SCORE_FLAG = args.inception_score
 UPDATE_FREQUENCY = args.update_frequency
+PROX = args.prox
+REG_PARAM = args.reg_param
+
+LEARNING_RATE_G = args.learning_rate_gen # It is really important to set different learning rates for the discriminator and generator
+LEARNING_RATE_D = args.learning_rate_dis
+SEED = args.seed
+torch.manual_seed(SEED)
+np.random.seed(SEED)
 
 if args.default:
     try:
@@ -90,8 +101,6 @@ if args.default:
 
 BATCH_SIZE = args.batch_size
 N_ITER = args.num_iter
-LEARNING_RATE_G = args.learning_rate_gen # It is really important to set different learning rates for the discriminator and generator
-LEARNING_RATE_D = args.learning_rate_dis
 BETA_1 = args.beta1
 BETA_2 = args.beta2
 BETA_EMA = args.ema
@@ -108,15 +117,17 @@ RESOLUTION = 32
 N_CHANNEL = 3
 START_EPOCH = 0
 EVAL_FREQ = 10000
-SEED = args.seed
-torch.manual_seed(SEED)
-np.random.seed(SEED)
 n_gen_update = 0
 n_dis_update = 0
 total_time = 0
 
 if GRADIENT_PENALTY:
     OUTPUT_PATH = os.path.join(OUTPUT_PATH, '%s_%s-gp'%(MODEL, MODE), '%s_%i/lrd=%.1e_lrg=%.1e/s%i/%i'%('adam', UPDATE_FREQUENCY, LEARNING_RATE_D, LEARNING_RATE_G, SEED, int(time.time())))
+elif REG_PARAM:
+    OUTPUT_PATH = os.path.join(OUTPUT_PATH, '%s_%s-prox' % (MODEL, MODE),
+                               '%s_%i/lrd=%.1e_lrg=%.1e/rp=%.1e/s%i/%i' % ('adam', UPDATE_FREQUENCY,
+                                                                LEARNING_RATE_D, LEARNING_RATE_G, REG_PARAM,
+                                                                SEED, int(time.time())))
 else:
     OUTPUT_PATH = os.path.join(OUTPUT_PATH, '%s_%s'%(MODEL, MODE), '%s_%i/lrd=%.1e_lrg=%.1e/s%i/%i'%('adam', UPDATE_FREQUENCY, LEARNING_RATE_D, LEARNING_RATE_G, SEED, int(time.time())))
 
@@ -140,19 +151,51 @@ if not os.path.exists(os.path.join(OUTPUT_PATH, 'gen')):
     os.makedirs(os.path.join(OUTPUT_PATH, 'gen'))
 
 if INCEPTION_SCORE_FLAG:
-    import tflib
-    import tflib.inception_score
+
+    from inception_score_pytorch.inception_score import inception_score
+
     def get_inception_score():
         all_samples = []
         samples = torch.randn(N_SAMPLES, N_LATENT)
         for i in xrange(0, N_SAMPLES, 100):
-            samples_100 = samples[i:i+100].cuda(0)
+            batch_samples = samples[i:i+100].cuda(0)
+            all_samples.append(gen(batch_samples).cpu().data.numpy())
+
+        all_samples = np.concatenate(all_samples, axis=0)
+        return inception_score(torch.from_numpy(all_samples), resize=True, cuda=True)
+
+    import tflib.fid as fid
+    import tensorflow as tf
+    stats_path = 'tflib/data/fid_stats_cifar10_train.npz'
+    inception_path = fid.check_or_download_inception('tflib/model')
+    f = np.load(stats_path)
+    mu_real, sigma_real = f['mu'][:], f['sigma'][:]
+    f.close()
+
+    fid.create_inception_graph(inception_path)  # load the graph into the current TF graph
+
+    config = tf.ConfigProto()
+    config.gpu_options.allow_growth = True
+
+    def get_fid_score():
+        all_samples = []
+        samples = torch.randn(N_SAMPLES, N_LATENT)
+        for i in xrange(0, N_SAMPLES, BATCH_SIZE):
+            samples_100 = samples[i:i+BATCH_SIZE]
+            if CUDA:
+                samples_100 = samples_100.cuda(0)
             all_samples.append(gen(samples_100).cpu().data.numpy())
 
         all_samples = np.concatenate(all_samples, axis=0)
         all_samples = np.multiply(np.add(np.multiply(all_samples, 0.5), 0.5), 255).astype('int32')
         all_samples = all_samples.reshape((-1, N_CHANNEL, RESOLUTION, RESOLUTION)).transpose(0, 2, 3, 1)
-        return tflib.inception_score.get_inception_score(list(all_samples))
+
+        with tf.Session(config=config) as sess:
+            sess.run(tf.global_variables_initializer())
+            mu_gen, sigma_gen = fid.calculate_activation_statistics(all_samples, sess, batch_size=BATCH_SIZE)
+
+        fid_value = fid.calculate_frechet_distance(mu_gen, sigma_gen, mu_real, sigma_real)
+        return fid_value
 
     inception_f = open(os.path.join(OUTPUT_PATH, 'inception.csv'), 'ab')
     inception_writter = csv.writer(inception_f)
@@ -197,6 +240,7 @@ f_writter = csv.writer(f)
 print 'Training...'
 n_iteration_t = 0
 gen_inception_score = 0
+gen_fid_score = 0
 while n_gen_update < N_ITER:
     t = time.time()
     avg_loss_G = 0
@@ -230,6 +274,9 @@ while n_gen_update < N_ITER:
 
             if GRADIENT_PENALTY:
                 penalty = dis.get_penalty(x_true.data, x_gen.data)
+            if REG_PARAM:
+                L1_reg = dis.get_1norm() # won't be differentiated
+                dis_loss += L1_reg * REG_PARAM
 
             loss = dis_loss + GRADIENT_PENALTY*penalty
             if UPDATE_FREQUENCY == 1:
@@ -239,9 +286,17 @@ while n_gen_update < N_ITER:
 
             dis_optimizer.step()
 
-            if MODE =='wgan' and not GRADIENT_PENALTY:
+            if MODE == 'wgan':
+                nonzeros = 0.
                 for p in dis.parameters():
-                    p.data.clamp_(-CLIP, CLIP)
+                    if REG_PARAM:
+                        if PROX == '1norm':
+                            p.data = utils.prox_1norm(p.data, REG_PARAM*LEARNING_RATE_D)
+                            nonzeros += p.nonzero().size(0)
+                        else:
+                            raise("not implemented")
+                    elif not GRADIENT_PENALTY:
+                        p.data.clamp_(-CLIP, CLIP)
 
             n_dis_update += 1
 
@@ -283,16 +338,22 @@ while n_gen_update < N_ITER:
             if n_gen_update%EVAL_FREQ == 1:
                 if INCEPTION_SCORE_FLAG:
                     gen_inception_score = get_inception_score()[0]
+                    try:
+                        gen_fid_score = get_fid_score()
+                    except:
+                        gen_fid_score = -1
 
-                    inception_writter.writerow((n_gen_update, gen_inception_score, total_time))
+                    inception_writter.writerow((n_gen_update, gen_inception_score, gen_fid_score, total_time))
                     inception_f.flush()
+
+                    x_gen = gen(z_examples)
+                    x = utils.unormalize(x_gen)
+                    torchvision.utils.save_image(x.data, os.path.join(OUTPUT_PATH, 'gen/%i.png' % n_gen_update), 10)
 
                     if TENSORBOARD_FLAG:
                         writer.add_scalar('inception_score', gen_inception_score, n_gen_update)
 
-
                 torch.save({'args': vars(args), 'n_gen_update': n_gen_update, 'total_time': total_time, 'state_gen': gen.state_dict(), 'gen_param_avg': gen_param_avg, 'gen_param_ema': gen_param_ema}, os.path.join(OUTPUT_PATH, "checkpoints/%i.state"%n_gen_update))
-
 
         n_iteration_t += 1
 
@@ -300,14 +361,18 @@ while n_gen_update < N_ITER:
     avg_loss_D /= d_samples
     avg_penalty /= d_samples
 
-    print 'Iter: %i, Loss Generator: %.4f, Loss Discriminator: %.4f, Penalty: %.2e, IS: %.2f, Time: %.4f'%(n_gen_update, avg_loss_G, avg_loss_D, avg_penalty, gen_inception_score, time.time() - t)
+    if REG_PARAM:
+        print 'Iter: %i, Loss Gen: %.4f, Loss Dis: %.4f, L1norm: %.2e, IS: %.2f, FID: %.2f, Time: %.4f' % (
+            n_gen_update, avg_loss_G, avg_loss_D, L1_reg*REG_PARAM,
+            gen_inception_score, gen_fid_score, time.time() - t)
+        f_writter.writerow((n_gen_update, avg_loss_G, avg_loss_D, avg_penalty, L1_reg.item()*REG_PARAM, time.time() - t))
+    else:
+        print 'Iter: %i, Loss Gen: %.4f, Loss Dis: %.4f, Penalty: %.2e, IS: %.2f, FID: %.2f, Time: %.4f' % (
+            n_gen_update, avg_loss_G, avg_loss_D, avg_penalty,
+            gen_inception_score, gen_fid_score, time.time() - t)
+        f_writter.writerow((n_gen_update, avg_loss_G, avg_loss_D, avg_penalty, time.time() - t))
 
-    f_writter.writerow((n_gen_update, avg_loss_G, avg_loss_D, avg_penalty, time.time() - t))
     f.flush()
-
-    x_gen = gen(z_examples)
-    x = utils.unormalize(x_gen)
-    torchvision.utils.save_image(x.data, os.path.join(OUTPUT_PATH, 'gen/%i.png' % n_gen_update), 10)
 
     if TENSORBOARD_FLAG:
         writer.add_scalar('loss_G', avg_loss_G, n_gen_update)
