@@ -21,7 +21,7 @@
 # SOFTWARE.
 
 # written by Hugo Berard (berard.hugo@gmail.com) while at Facebook.
-# modifications by Axel Böhm (axel.boehm@univie.ac.at) and Michael Sedlmayer (michael.sedlmayer@univie.ac.at)
+# modifications by Axel Boehm (axel.boehm@univie.ac.at) and Michael Sedlmayer (michael.sedlmayer@univie.ac.at)
 
 import torch
 from torch.autograd import Variable
@@ -34,6 +34,7 @@ import os
 import json
 import csv
 import sys
+import pdb
 
 import models
 import utils
@@ -85,6 +86,11 @@ SEED = args.seed
 torch.manual_seed(SEED)
 np.random.seed(SEED)
 
+# It is really important to set different learning rates for the discriminator and generator
+LEARNING_RATE_G = args.learning_rate_gen
+LEARNING_RATE_D = args.learning_rate_dis
+BATCH_SIZE = args.batch_size
+
 if TEST:
     config = "config/hyperparams_test_dcgan_wgan_fbfadam.json"
 
@@ -100,10 +106,6 @@ if DEFAULT:
     args = argparse.Namespace(**data)
 
 
-# It is really important to set different learning rates for the discriminator and generator
-LEARNING_RATE_G = args.learning_rate_gen
-LEARNING_RATE_D = args.learning_rate_dis
-BATCH_SIZE = args.batch_size
 N_ITER = args.num_iter
 BETA_1 = args.beta1
 BETA_2 = args.beta2
