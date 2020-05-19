@@ -361,16 +361,16 @@ while n_gen_update < N_ITER:
     avg_loss_D /= d_samples
     avg_penalty /= d_samples
 
+    printi = 'Iter: %i, Loss Gen: %.4f, Loss Dis: %.4f, ' % (n_gen_update, avg_loss_G, avg_loss_D) 
     if REG_PARAM:
-        print 'Iter: %i, Loss Gen: %.4f, Loss Dis: %.4f, L1norm: %.2e, IS: %.2f, FID: %.2f, Time: %.4f' % (
-            n_gen_update, avg_loss_G, avg_loss_D, L1_reg*REG_PARAM,
-            gen_inception_score, gen_fid_score, time.time() - t)
+        printi = printi + 'L1norm: %.2e' % L1_reg*REG_PARAM
         f_writter.writerow((n_gen_update, avg_loss_G, avg_loss_D, avg_penalty, L1_reg.item()*REG_PARAM, time.time() - t))
     else:
-        print 'Iter: %i, Loss Gen: %.4f, Loss Dis: %.4f, Penalty: %.2e, IS: %.2f, FID: %.2f, Time: %.4f' % (
-            n_gen_update, avg_loss_G, avg_loss_D, avg_penalty,
-            gen_inception_score, gen_fid_score, time.time() - t)
+        printi = printi + 'Penalty: %.2e' % avg_penalty
         f_writter.writerow((n_gen_update, avg_loss_G, avg_loss_D, avg_penalty, time.time() - t))
+    printi = printi + 'IS: %.2f, FID: %.2f, Time: %.4f' % (gen_inception_score, gen_fid_score, time.time() - t)
+
+    print printi
 
     f.flush()
 
