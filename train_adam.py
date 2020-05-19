@@ -121,7 +121,9 @@ n_gen_update = 0
 n_dis_update = 0
 total_time = 0
 
-if GRADIENT_PENALTY:
+if GRADIENT_PENALTY  and REG_PARAM:
+    OUTPUT_PATH = os.path.join(OUTPUT_PATH, '%s_%s-gp-prox'%(MODEL, MODE), '%s_%i/lrd=%.1e_lrg=%.1e/rp=%.1e/s%i/%i'%('adam', UPDATE_FREQUENCY, LEARNING_RATE_D, LEARNING_RATE_G, REG_PARAM, SEED, int(time.time())))
+elif GRADIENT_PENALTY:
     OUTPUT_PATH = os.path.join(OUTPUT_PATH, '%s_%s-gp'%(MODEL, MODE), '%s_%i/lrd=%.1e_lrg=%.1e/s%i/%i'%('adam', UPDATE_FREQUENCY, LEARNING_RATE_D, LEARNING_RATE_G, SEED, int(time.time())))
 elif REG_PARAM:
     OUTPUT_PATH = os.path.join(OUTPUT_PATH, '%s_%s-prox' % (MODEL, MODE),
@@ -249,6 +251,7 @@ while n_gen_update < N_ITER:
     d_samples = 0
     g_samples = 0
     penalty = Variable(torch.Tensor([0.]))
+    L1_reg = Variable(torch.Tensor([0.]))
     if CUDA:
         penalty = penalty.cuda(0)
     for i, data in enumerate(trainloader):
@@ -361,17 +364,15 @@ while n_gen_update < N_ITER:
     avg_loss_D /= d_samples
     avg_penalty /= d_samples
 
-    printi = 'Iter: %i, Loss Gen: %.4f, Loss Dis: %.4f, ' % (n_gen_update, avg_loss_G, avg_loss_D) 
+    # console output
+    strout = 'Iter: %i, Loss Gen: %.4f, Loss Dis: %.4f, ' % (n_gen_update, avg_loss_G, avg_loss_D) 
+    if GRADIENT_PENALTY:
+        strout = strout + 'Penalty: %.2e, ' % avg_penalty
     if REG_PARAM:
-        printi = printi + 'L1norm: %.2e' % L1_reg*REG_PARAM
-        f_writter.writerow((n_gen_update, avg_loss_G, avg_loss_D, avg_penalty, L1_reg.item()*REG_PARAM, time.time() - t))
-    else:
-        printi = printi + 'Penalty: %.2e' % avg_penalty
-        f_writter.writerow((n_gen_update, avg_loss_G, avg_loss_D, avg_penalty, time.time() - t))
-    printi = printi + 'IS: %.2f, FID: %.2f, Time: %.4f' % (gen_inception_score, gen_fid_score, time.time() - t)
+        strout = strout + 'L1norm: %.2e, ' % (L1_reg*REG_PARAM)
+    print strout + 'IS: %.2f, FID: %.2f, Time: %.4f' % (gen_inception_score, gen_fid_score, time.time() - t)
 
-    print printi
-
+    f_writter.writerow((n_gen_update, avg_loss_G, avg_loss_D, avg_penalty, L1_reg.item()*REG_PARAM, time.time() - t))
     f.flush()
 
     if TENSORBOARD_FLAG:
