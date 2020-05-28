@@ -1,12 +1,18 @@
 import numpy as np
 import timeit
-from helpers import make_grad, make_prox, make_gap_upper_bound
+from helpers import make_grad, make_prox, make_gap_upper_bound, make_gap
 
-def FBF(A, a, b, rp_x, reg_x, rp_y, reg_y, x0, y0, LR, batch_size=10, max_iter=1e04, eps=1e-5):
+def FBF(A, a, b, rp_x, reg_x, rp_y, reg_y, x0, y0, LR, batch_size=10, max_iter=1e04, eps=1e-5, x_sol=None, y_sol=None, radius=1.):
     grad = make_grad(A, a, b, batch_size)
     prox_x = make_prox(LR*rp_x, reg_x)
     prox_y = make_prox(LR*rp_y, reg_y)
-    gap_upper = make_gap_upper_bound(A, a, b, rp_x, reg_x, rp_y, reg_y)
+    # gap_upper = make_gap_upper_bound(A, a, b, rp_x, reg_x, rp_y, reg_y)
+    if not (x_sol is None or y_sol is None):
+        gap = make_gap(A, a, b, rp_x, reg_x, rp_y, reg_y, x_sol, y_sol, radius)
+        dist = lambda x, y : np.sqrt(np.linalg.norm(x-x_sol)**2 + np.linalg.norm(y-y_sol)**2)
+    else:
+        gap = lambda x, y : np.nan
+        dist = lambda x, y : np.nan
 
     k = 0
     Error_fp = []
@@ -18,7 +24,8 @@ def FBF(A, a, b, rp_x, reg_x, rp_y, reg_y, x0, y0, LR, batch_size=10, max_iter=1
     x, y = x0, y0
     while k < max_iter:
         k+=1
-        res_gap = gap_upper(x, y)
+        # res_gap = gap_upper(x, y)
+        res_gap = gap(x, y)
         # print(res_gap)
         Error_gap.append(res_gap)
         
@@ -35,9 +42,9 @@ def FBF(A, a, b, rp_x, reg_x, rp_y, reg_y, x0, y0, LR, batch_size=10, max_iter=1
         y = v + LR*g_v - LR*g_y
 
         if k == 1:
-            print("Iteration\t: res_fp\t\t\tres_gap")
-        if k == 1 or not k%1000:
-            print(k, "\t\t: ", res_fp, "\t\t", res_gap)
+            print("Iteration\t: res_fp\t\t\tres_gap\t\t\tres_dist")
+        if k == 1 or not k%100:
+            print(k, "\t\t: ", res_fp, "\t\t", res_gap, "\t\t", dist(x,y))
 
         if res_fp <= eps:
             break

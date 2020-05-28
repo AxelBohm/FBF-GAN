@@ -1,16 +1,24 @@
 import numpy as np
 
-
 def trunc_decs(value, decs=0):
     return np.trunc(value*10**decs)/(10**decs)
 
 def get_reg_types():
     return ['1norm', '2norm']
 
+def check_reg_type(reg_type):
+    if reg_type not in get_reg_types():
+        raise ValueError(f"Invalid regularisation type. Expected one of: {get_reg_types()}")
+
+def regul(x, rp, reg_type):
+    check_reg_type(reg_type)
+    if reg_type == '1norm':
+        return rp*np.linalg.norm(x, ord = 1)
+    elif reg_type == '2norm':
+        return rp*np.linalg.norm(x, ord = 2)
+
 def make_prox(rp, reg_type = '1norm'):
-    reg_types = get_reg_types()
-    if reg_type not in reg_types:
-        raise ValueError(f"Invalid regularisation type. Expected one of: {reg_types}")
+    check_reg_type(reg_type)
     def prox(x):
         if reg_type == '1norm':
             return np.sign(x)*np.maximum(np.abs(x)-rp, 0)
@@ -40,24 +48,60 @@ def make_grad(A, a, b, batch_size=1):
     return grad
 
 def make_gap_upper_bound(A, a, b, rp_x, reg_x, rp_y, reg_y):
-    reg_types = get_reg_types()
-    if not (reg_x in reg_types and reg_y in reg_types):
-        raise ValueError(f"Invalid regularisation type. Expected one of: {reg_types}")
+    check_reg_type(reg_x)
+    check_reg_type(reg_y)
     def gap_upper_bound(x, y):
         if reg_x == '1norm':
             test_x = np.linalg.norm(A @ y + a, ord = np.inf)
-            regul_x = np.linalg.norm(x, ord = 1)
         elif reg_x == '2norm':
             test_x = np.linalg.norm(A @ y + a, ord = 2)
-            regul_x = np.linalg.norm(x, ord = 2)
         if reg_y == '1norm':
             test_y = np.linalg.norm(A.transpose() @ x + b, ord = np.inf)
-            regul_y = np.linalg.norm(y, ord = 1)
         elif reg_y == '2norm':
             test_y = np.linalg.norm(A.transpose() @ x + b, ord = 2)
-            regul_y = np.linalg.norm(y, ord = 2)
         if not (test_x <= rp_x and test_y <= rp_y):
             return np.inf
         else:
-            return np.inner(x,a) - np.inner(y,b) + rp_x*regul_x + rp_y*regul_y
+            return np.inner(x,a) - np.inner(y,b) + regul(x, rp_x, reg_x) + regul(y, rp_y, reg_y)
     return gap_upper_bound
+
+def make_gap(A, a, b, rp_x, reg_x, rp_y, reg_y, x_sol, y_sol, radius):
+    check_reg_type(reg_x)
+    check_reg_type(reg_y)
+    def gap(x, y):
+        const = np.inner(x,a) - np.inner(y,b) + regul(x, rp_x, reg_x) + regul(y, rp_y, reg_y)
+        inf_reg_x = solve_inf_reg(rp_x, reg_x, A.transpose() @ x + b, x_sol, radius)
+        inf_reg_y = solve_inf_reg(rp_y, reg_y, np.multiply(-1., A @ y + a), y_sol, radius)
+        return const + inf_reg_x + inf_reg_y
+    return gap
+
+def solve_inf_reg(rp, reg_type, vec, sol, r):
+    check_reg_type(reg_type)
+    n_iter = 400
+    lr = 2.
+    
+    def prox_f(x):
+        tmp_prox = make_prox(r*lr, '2norm')
+        return tmp_prox(x - np.multiply(lr, sol))
+    
+    def prox_g(x):
+        if reg_type == '1norm':
+            ord = np.inf
+        elif reg_type == '2norm':
+            ord = 2
+        tmp_vec = x - vec
+        tmp_norm = np.linalg.norm(tmp_vec, ord = ord)
+        if tmp_norm <= rp:
+            return x
+        else:
+            return vec + np.multiply(rp/tmp_norm, tmp_vec)
+    
+    x = vec
+    for i in range(n_iter):
+        y = prox_g(x)
+        z = prox_f(np.multiply(2., y) - x)
+        x = x + z - y
+    
+    arg_min = prox_g(x)
+    
+    return np.inner(arg_min, sol) + r*np.linalg.norm(arg_min)
