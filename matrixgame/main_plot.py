@@ -2,6 +2,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 # from helpers import *
 from optimizers import FBF
+import time
 
 #rand_seed = 42
 rand_seed = 9001
@@ -33,15 +34,15 @@ M = np.block([
 L = np.linalg.norm(M)
 print("Rank A:", np.linalg.matrix_rank(A))
 print("Lipschitz constant: ", L)
-
+time.sleep(10)
 # Parameters for experiments
 batch_size = 0
-max_iter = 1e5
-eps = 1e-5
+max_iter = 1e8
+eps = 0.
 LR = 0.5/L
-radius = 1. #radius for balls in gap function
+radius = 5. #radius for balls in gap function
 max_iter_sol = 1e5
-eps_sol = 1e-10
+eps_sol = 1e-20
 
 # x0 = np.linalg.solve(A.transpose(),-b)
 # y0 = np.linalg.solve(A, -a)
@@ -56,7 +57,7 @@ y0 = np.random.rand(d)
 #fig_gap, ax_gap = plt.subplots(figsize=(8,7))
 
 x_sol, y_sol, _, _, _, _ = FBF(A=A, a=a, b=b, rp_x=rp_x, reg_x=reg_x, rp_y=rp_y, reg_y=reg_y, x0=x0, y0=y0, LR=LR, batch_size=batch_size, max_iter=max_iter_sol, eps=eps_sol)
-x, y, time, iter, Error_fp, Error_gap = FBF(A=A, a=a, b=b, rp_x=rp_x, reg_x=reg_x, rp_y=rp_y, reg_y=reg_y, x0=x_sol+x0, y0=y_sol+y0, LR=LR, batch_size=batch_size, max_iter=max_iter, eps=eps, x_sol=x_sol, y_sol=y_sol, radius=radius)
+x, y, time, iter, Error_fp, Error_gap = FBF(A=A, a=a, b=b, rp_x=rp_x, reg_x=reg_x, rp_y=rp_y, reg_y=reg_y, x0=x_sol, y0=y_sol, LR=LR, batch_size=batch_size, max_iter=max_iter, eps=eps, x_sol=x_sol, y_sol=y_sol, radius=radius)
 
 # print("Min/Max component x_sol:", min(x_sol), max(x_sol))
 # print("Min/Max component y_sol:", min(y_sol), max(y_sol))

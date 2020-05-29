@@ -11,7 +11,7 @@ def FBF(A, a, b, rp_x, reg_x, rp_y, reg_y, x0, y0, LR, batch_size=10, max_iter=1
         gap = make_gap(A, a, b, rp_x, reg_x, rp_y, reg_y, x_sol, y_sol, radius)
         dist = lambda x, y : np.sqrt(np.linalg.norm(x-x_sol)**2 + np.linalg.norm(y-y_sol)**2)
     else:
-        gap = lambda x, y : np.nan
+        gap = lambda x, y, k : np.nan
         dist = lambda x, y : np.nan
 
     k = 0
@@ -24,11 +24,7 @@ def FBF(A, a, b, rp_x, reg_x, rp_y, reg_y, x0, y0, LR, batch_size=10, max_iter=1
     x, y = x0, y0
     while k < max_iter:
         k+=1
-        # res_gap = gap_upper(x, y)
-        res_gap = gap(x, y)
-        # print(res_gap)
-        Error_gap.append(res_gap)
-        
+
         g_x, g_y = grad(x, y)
         u = prox_x(x - LR*g_x)
         v = prox_y(y + LR*g_y)
@@ -42,15 +38,23 @@ def FBF(A, a, b, rp_x, reg_x, rp_y, reg_y, x0, y0, LR, batch_size=10, max_iter=1
         y = v + LR*g_v - LR*g_y
 
         if k == 1:
-            print("Iteration\t: res_fp\t\t\tres_gap\t\t\tres_dist")
-        if k == 1 or not k%100:
-            print(k, "\t\t: ", res_fp, "\t\t", res_gap, "\t\t", dist(x,y))
+            print("Iter\t: res_fp\t\t\tres_gap\t\t\tres_dist\t\t\ttime")
+            t_old = timeit.default_timer()
+        if k == 1 or not k%1000:
+            t = timeit.default_timer()
+            # res_gap = gap_upper(x, y)
+            res_gap = gap(x, y, k)
+            # print(res_gap)
+            Error_gap.append(res_gap)
+
+            print(f"{k}\t: {res_fp:.2e}\t\t{res_gap:02.5f}\t\t{dist(x,y):.5f}\t\t{t-t_old:.2f}")
+            t_old = t
 
         if res_fp <= eps:
             break
 
     t = timeit.default_timer() - t0
-
+    res_gap = make_gap(A, a, b, rp_x, reg_x, rp_y, reg_y, x, y, radius)(x,y,k)
     # report results
     print("\nNumber of iterations = ", k)
     print("Total time = ", t)

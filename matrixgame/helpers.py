@@ -68,17 +68,17 @@ def make_gap_upper_bound(A, a, b, rp_x, reg_x, rp_y, reg_y):
 def make_gap(A, a, b, rp_x, reg_x, rp_y, reg_y, x_sol, y_sol, radius):
     check_reg_type(reg_x)
     check_reg_type(reg_y)
-    def gap(x, y):
+    def gap(x, y, iter):
         const = np.inner(x,a) - np.inner(y,b) + regul(x, rp_x, reg_x) + regul(y, rp_y, reg_y)
-        inf_reg_x = solve_inf_reg(rp_x, reg_x, A.transpose() @ x + b, x_sol, radius)
-        inf_reg_y = solve_inf_reg(rp_y, reg_y, np.multiply(-1., A @ y + a), y_sol, radius)
+        inf_reg_x = solve_inf_reg(rp_x, reg_x, A.transpose() @ x + b, x_sol, radius, iter)
+        inf_reg_y = solve_inf_reg(rp_y, reg_y, np.multiply(-1., A @ y + a), y_sol, radius, iter)
         return const + inf_reg_x + inf_reg_y
     return gap
 
-def solve_inf_reg(rp, reg_type, vec, sol, r):
+def solve_inf_reg(rp, reg_type, vec, sol, r, k):
     check_reg_type(reg_type)
-    n_iter = 400
-    lr = 2.
+    n_iter = int(10**(np.ceil(np.log10(k)))) #10
+    lr = 1.
     
     def prox_f(x):
         tmp_prox = make_prox(r*lr, '2norm')
