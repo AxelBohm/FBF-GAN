@@ -21,7 +21,7 @@
 # SOFTWARE.
 
 # written by Hugo Berard (berard.hugo@gmail.com) while at Facebook.
-# modifications by Axel Boehm (axel.boehm@univie.ac.at) and 
+# modifications by Axel Boehm (axel.boehm@univie.ac.at) and
 # Michael Sedlmayer (michael.sedlmayer@univie.ac.at).
 
 import torch
@@ -81,8 +81,6 @@ UPDATE_FREQUENCY = args.update_frequency
 PROX = args.prox
 REG_PARAM = args.reg_param
 
-LEARNING_RATE_G = args.learning_rate_gen # It is really important to set different learning rates for the discriminator and generator
-LEARNING_RATE_D = args.learning_rate_dis
 SEED = args.seed
 torch.manual_seed(SEED)
 np.random.seed(SEED)
@@ -90,7 +88,7 @@ np.random.seed(SEED)
 if args.default:
     try:
         if args.gradient_penalty == 0:
-            config = "config/default_%s_wgan_adam%i_.json"%(args.model, UPDATE_FREQUENCY)
+            config = "config/default_%s_wgan_adam%i.json"%(args.model, UPDATE_FREQUENCY)
         else:
             config = "config/default_%s_wgangp_adam%i.json"%(args.model, UPDATE_FREQUENCY)
     except:
@@ -100,6 +98,8 @@ if args.default:
         data = json.load(f)
     args = argparse.Namespace(**data)
 
+LEARNING_RATE_G = args.learning_rate_gen # It is really important to set different learning rates for the discriminator and generator
+LEARNING_RATE_D = args.learning_rate_dis
 BATCH_SIZE = args.batch_size
 N_ITER = args.num_iter
 BETA_1 = args.beta1

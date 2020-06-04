@@ -21,7 +21,7 @@
 # SOFTWARE.
 
 # written by Hugo Berard (berard.hugo@gmail.com) while at Facebook.
-# modifications by Axel Boehm (axel.boehm@univie.ac.at) and 
+# modifications by Axel Boehm (axel.boehm@univie.ac.at) and
 # Michael Sedlmayer (michael.sedlmayer@univie.ac.at).
 
 import torch
