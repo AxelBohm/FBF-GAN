@@ -45,18 +45,18 @@ parser = argparse.ArgumentParser()
 parser.add_argument('output')
 parser.add_argument('--model', choices=('resnet', 'dcgan'), default='resnet')
 parser.add_argument('--cuda', action='store_true')
-parser.add_argument('-bs' ,'--batch-size', default=64, type=int)
+parser.add_argument('-bs', '--batch-size', default=64, type=int)
 parser.add_argument('--num-iter', default=500000, type=int)
 parser.add_argument('-lrd', '--learning-rate-dis', default=2e-4, type=float)
 parser.add_argument('-lrg', '--learning-rate-gen', default=2e-5, type=float)
-parser.add_argument('-b1' ,'--beta1', default=0.5, type=float)
-parser.add_argument('-b2' ,'--beta2', default=0.9, type=float)
+parser.add_argument('-b1', '--beta1', default=0.5, type=float)
+parser.add_argument('-b2', '--beta2', default=0.9, type=float)
 parser.add_argument('-ema', default=0.9999, type=float)
-parser.add_argument('-nz' ,'--num-latent', default=128, type=int)
-parser.add_argument('-nfd' ,'--num-filters-dis', default=128, type=int)
-parser.add_argument('-nfg' ,'--num-filters-gen', default=128, type=int)
+parser.add_argument('-nz', '--num-latent', default=128, type=int)
+parser.add_argument('-nfd', '--num-filters-dis', default=128, type=int)
+parser.add_argument('-nfg', '--num-filters-gen', default=128, type=int)
 parser.add_argument('-gp', '--gradient-penalty', default=10, type=float)
-parser.add_argument('-m', '--mode', choices=('gan','ns-gan', 'wgan'), default='wgan')
+parser.add_argument('-m', '--mode', choices=('gan', 'ns-gan', 'wgan'), default='wgan')
 parser.add_argument('-c', '--clip', default=0.01, type=float)
 parser.add_argument('-d', '--distribution', choices=('normal', 'uniform'), default='normal')
 parser.add_argument('--batchnorm-dis', action='store_true')
@@ -78,9 +78,9 @@ UPDATE_FREQUENCY = args.update_frequency
 if args.default:
     try:
         if args.gradient_penalty == 0:
-            config = "config/default_%s_wgan_adam%i_.json"%(args.model, UPDATE_FREQUENCY)
+            config = "config/default_%s_wgan_adam%i.json" % (args.model, UPDATE_FREQUENCY)
         else:
-            config = "config/default_%s_wgangp_adam%i.json"%(args.model, UPDATE_FREQUENCY)
+            config = "config/default_%s_wgangp_adam%i.json" % (args.model, UPDATE_FREQUENCY)
     except:
         raise ValueError("Not default config available for this.")
 
@@ -88,10 +88,11 @@ if args.default:
         data = json.load(f)
     args = argparse.Namespace(**data)
 
+# It is really important to set different learning rates for the discriminator and generator
+LEARNING_RATE_G = args.learning_rate_gen
+LEARNING_RATE_D = args.learning_rate_dis
 BATCH_SIZE = args.batch_size
 N_ITER = args.num_iter
-LEARNING_RATE_G = args.learning_rate_gen # It is really important to set different learning rates for the discriminator and generator
-LEARNING_RATE_D = args.learning_rate_dis
 BETA_1 = args.beta1
 BETA_2 = args.beta2
 BETA_EMA = args.ema
@@ -220,7 +221,7 @@ while n_gen_update < N_ITER:
         x_gen = gen(z)
         p_true, p_gen = dis(x_true), dis(x_gen)
 
-        if UPDATE_FREQUENCY==1 or (n_iteration_t+1)%UPDATE_FREQUENCY != 0:
+        if UPDATE_FREQUENCY == 1 or (n_iteration_t+1) % UPDATE_FREQUENCY != 0:
             for p in gen.parameters():
                 p.requires_grad = False
 
@@ -255,7 +256,7 @@ while n_gen_update < N_ITER:
 
             total_time += time.time() - _t
 
-        if UPDATE_FREQUENCY==1 or (n_iteration_t+1)%UPDATE_FREQUENCY == 0:
+        if UPDATE_FREQUENCY == 1 or (n_iteration_t+1) % UPDATE_FREQUENCY == 0:
             for p in dis.parameters():
                 p.requires_grad = False
 
@@ -271,7 +272,7 @@ while n_gen_update < N_ITER:
             n_gen_update += 1
             for j, param in enumerate(gen.parameters()):
                 gen_param_avg[j] = gen_param_avg[j]*n_gen_update/(n_gen_update+1.) + param.data.clone()/(n_gen_update+1.)
-                gen_param_ema[j] = gen_param_ema[j]*BETA_EMA+ param.data.clone()*(1-BETA_EMA)
+                gen_param_ema[j] = gen_param_ema[j]*BETA_EMA + param.data.clone()*(1-BETA_EMA)
 
             g_samples += len(x_true)
 
@@ -280,7 +281,7 @@ while n_gen_update < N_ITER:
 
             total_time += time.time() - _t
 
-            if n_gen_update%EVAL_FREQ == 1:
+            if n_gen_update % EVAL_FREQ == 1:
                 if INCEPTION_SCORE_FLAG:
                     gen_inception_score = get_inception_score()[0]
 
@@ -290,9 +291,9 @@ while n_gen_update < N_ITER:
                     if TENSORBOARD_FLAG:
                         writer.add_scalar('inception_score', gen_inception_score, n_gen_update)
 
-
-                torch.save({'args': vars(args), 'n_gen_update': n_gen_update, 'total_time': total_time, 'state_gen': gen.state_dict(), 'gen_param_avg': gen_param_avg, 'gen_param_ema': gen_param_ema}, os.path.join(OUTPUT_PATH, "checkpoints/%i.state"%n_gen_update))
-
+                torch.save({'args': vars(args), 'n_gen_update': n_gen_update, 'total_time': total_time, 'state_gen':
+                            gen.state_dict(), 'gen_param_avg': gen_param_avg, 'gen_param_ema': gen_param_ema},
+                           os.path.join(OUTPUT_PATH, "checkpoints/%i.state" % n_gen_update))
 
         n_iteration_t += 1
 

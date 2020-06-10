@@ -46,18 +46,18 @@ parser = argparse.ArgumentParser()
 parser.add_argument('output')
 parser.add_argument('--model', choices=('resnet', 'dcgan'), default='resnet')
 parser.add_argument('--cuda', action='store_true')
-parser.add_argument('-bs' ,'--batch-size', default=64, type=int)
+parser.add_argument('-bs', '--batch-size', default=64, type=int)
 parser.add_argument('--num-iter', default=500000, type=int)
 parser.add_argument('-lrd', '--learning-rate-dis', default=5e-4, type=float)
 parser.add_argument('-lrg', '--learning-rate-gen', default=5e-5, type=float)
-parser.add_argument('-b1' ,'--beta1', default=0.5, type=float)
-parser.add_argument('-b2' ,'--beta2', default=0.9, type=float)
+parser.add_argument('-b1', '--beta1', default=0.5, type=float)
+parser.add_argument('-b2', '--beta2', default=0.9, type=float)
 parser.add_argument('-ema', default=0.9999, type=float)
-parser.add_argument('-nz' ,'--num-latent', default=128, type=int)
-parser.add_argument('-nfd' ,'--num-filters-dis', default=128, type=int)
-parser.add_argument('-nfg' ,'--num-filters-gen', default=128, type=int)
+parser.add_argument('-nz', '--num-latent', default=128, type=int)
+parser.add_argument('-nfd', '--num-filters-dis', default=128, type=int)
+parser.add_argument('-nfg', '--num-filters-gen', default=128, type=int)
 parser.add_argument('-gp', '--gradient-penalty', default=10, type=float)
-parser.add_argument('-m', '--mode', choices=('gan','ns-gan', 'wgan'), default='wgan')
+parser.add_argument('-m', '--mode', choices=('gan', 'ns-gan', 'wgan'), default='wgan')
 parser.add_argument('-c', '--clip', default=0.01, type=float)
 parser.add_argument('-d', '--distribution', choices=('normal', 'uniform'), default='normal')
 parser.add_argument('--batchnorm-dis', action='store_true')
@@ -229,7 +229,7 @@ while n_gen_update < N_ITER:
         dis_optimizer.zero_grad()
         dis_loss.backward(retain_graph=True)
 
-        if (n_iteration_t+1)%2 != 0:
+        if (n_iteration_t+1) % 2 != 0:
             dis_optimizer.extrapolation()
         else:
             dis_optimizer.step()
@@ -242,14 +242,15 @@ while n_gen_update < N_ITER:
         gen_optimizer.zero_grad()
         gen_loss.backward()
 
-        if (n_iteration_t+1)%2 != 0:
+        if (n_iteration_t+1) % 2 != 0:
             gen_optimizer.extrapolation()
         else:
             n_gen_update += 1
             gen_optimizer.step()
             for j, param in enumerate(gen.parameters()):
-                gen_param_avg[j] = gen_param_avg[j]*n_gen_update/(n_gen_update+1.) + param.data.clone()/(n_gen_update+1.)
-                gen_param_ema[j] = gen_param_ema[j]*BETA_EMA+ param.data.clone()*(1-BETA_EMA)
+                gen_param_avg[j] = gen_param_avg[j]*n_gen_update/(n_gen_update+1.) + \
+                    param.data.clone()/(n_gen_update+1.)
+                gen_param_ema[j] = gen_param_ema[j]*BETA_EMA + param.data.clone()*(1-BETA_EMA)
 
         for p in dis.parameters():
             p.requires_grad = True
@@ -260,14 +261,14 @@ while n_gen_update < N_ITER:
 
         total_time += time.time() - _t
 
-        if (n_iteration_t+1)%2 == 0:
+        if (n_iteration_t+1) % 2 == 0:
 
             avg_loss_D += dis_loss.item()*len(x_true)
             avg_loss_G += gen_loss.item()*len(x_true)
             avg_penalty += penalty.item()*len(x_true)
             num_samples += len(x_true)
 
-            if n_gen_update%EVAL_FREQ == 1:
+            if n_gen_update % EVAL_FREQ == 1:
                 if INCEPTION_SCORE_FLAG:
                     gen_inception_score = get_inception_score()[0]
 
@@ -277,9 +278,12 @@ while n_gen_update < N_ITER:
                     if TENSORBOARD_FLAG:
                         writer.add_scalar('inception_score', gen_inception_score, n_gen_update)
 
-
-                torch.save({'args': vars(args), 'n_gen_update': n_gen_update, 'total_time': total_time, 'state_gen': gen.state_dict(), 'gen_param_avg': gen_param_avg, 'gen_param_ema': gen_param_ema}, os.path.join(OUTPUT_PATH, "checkpoints/%i.state"%n_gen_update))
-
+                torch.save({'args': vars(args), 'n_gen_update': n_gen_update,
+                            'total_time': total_time, 'state_gen':
+                            gen.state_dict(), 'gen_param_avg': gen_param_avg,
+                            'gen_param_ema': gen_param_ema},
+                           os.path.join(OUTPUT_PATH, "checkpoints/%i.state" %
+                                        n_gen_update))
 
         n_iteration_t += 1
 
