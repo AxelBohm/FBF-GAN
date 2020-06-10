@@ -21,12 +21,11 @@
 # SOFTWARE.
 
 # written by Hugo Berard (berard.hugo@gmail.com) while at Facebook.
+# modifications by Axel Boehm (axel.boehm@univie.ac.at) and
+# Michael Sedlmayer (michael.sedlmayer@univie.ac.at).
 
 import torch
-import torch.nn as nn
-import torch.nn.functional as F
-from torch.autograd import Function, Variable, grad
-import torch.optim as optim
+from torch.autograd import Variable
 import time
 import torchvision
 import torchvision.transforms as transforms
@@ -35,7 +34,6 @@ import argparse
 import os
 import json
 import csv
-import shutil
 import sys
 
 import models
@@ -139,19 +137,51 @@ if not os.path.exists(os.path.join(OUTPUT_PATH, 'gen')):
     os.makedirs(os.path.join(OUTPUT_PATH, 'gen'))
 
 if INCEPTION_SCORE_FLAG:
-    import tflib
-    import tflib.inception_score
+
+    from inception_score_pytorch.inception_score import inception_score
+
     def get_inception_score():
         all_samples = []
         samples = torch.randn(N_SAMPLES, N_LATENT)
         for i in xrange(0, N_SAMPLES, 100):
-            samples_100 = samples[i:i+100].cuda(0)
+            batch_samples = samples[i:i+100].cuda(0)
+            all_samples.append(gen(batch_samples).cpu().data.numpy())
+
+        all_samples = np.concatenate(all_samples, axis=0)
+        return inception_score(torch.from_numpy(all_samples), resize=True, cuda=True)
+
+    import tflib.fid as fid
+    import tensorflow as tf
+    stats_path = 'tflib/data/fid_stats_cifar10_train.npz'
+    inception_path = fid.check_or_download_inception('tflib/model')
+    f = np.load(stats_path)
+    mu_real, sigma_real = f['mu'][:], f['sigma'][:]
+    f.close()
+
+    fid.create_inception_graph(inception_path)  # load the graph into the current TF graph
+
+    config = tf.ConfigProto()
+    config.gpu_options.allow_growth = True
+
+    def get_fid_score():
+        all_samples = []
+        samples = torch.randn(N_SAMPLES, N_LATENT)
+        for i in xrange(0, N_SAMPLES, BATCH_SIZE):
+            samples_100 = samples[i:i+BATCH_SIZE]
+            if CUDA:
+                samples_100 = samples_100.cuda(0)
             all_samples.append(gen(samples_100).cpu().data.numpy())
 
         all_samples = np.concatenate(all_samples, axis=0)
         all_samples = np.multiply(np.add(np.multiply(all_samples, 0.5), 0.5), 255).astype('int32')
         all_samples = all_samples.reshape((-1, N_CHANNEL, RESOLUTION, RESOLUTION)).transpose(0, 2, 3, 1)
-        return tflib.inception_score.get_inception_score(list(all_samples))
+
+        with tf.Session(config=config) as sess:
+            sess.run(tf.global_variables_initializer())
+            mu_gen, sigma_gen = fid.calculate_activation_statistics(all_samples, sess, batch_size=BATCH_SIZE)
+
+        fid_value = fid.calculate_frechet_distance(mu_gen, sigma_gen, mu_real, sigma_real)
+        return fid_value
 
     inception_f = open(os.path.join(OUTPUT_PATH, 'inception.csv'), 'ab')
     inception_writter = csv.writer(inception_f)
@@ -196,6 +226,7 @@ f_writter = csv.writer(f)
 print 'Training...'
 n_iteration_t = 0
 gen_inception_score = 0
+gen_fid_score = 0
 while n_gen_update < N_ITER:
     t = time.time()
     avg_loss_G = 0
@@ -271,8 +302,12 @@ while n_gen_update < N_ITER:
             if n_gen_update % EVAL_FREQ == 1:
                 if INCEPTION_SCORE_FLAG:
                     gen_inception_score = get_inception_score()[0]
+                    try:
+                        gen_fid_score = get_fid_score()
+                    except:
+                        gen_fid_score = -1
 
-                    inception_writter.writerow((n_gen_update, gen_inception_score, total_time))
+                    inception_writter.writerow((n_gen_update, gen_inception_score, gen_fid_score, total_time))
                     inception_f.flush()
 
                     if TENSORBOARD_FLAG:
@@ -291,7 +326,9 @@ while n_gen_update < N_ITER:
     avg_loss_D /= num_samples
     avg_penalty /= num_samples
 
-    print 'Iter: %i, Loss Generator: %.4f, Loss Discriminator: %.4f, Penalty: %.2e, IS: %.2f, Time: %.4f'%(n_gen_update, avg_loss_G, avg_loss_D, avg_penalty, gen_inception_score, time.time() - t)
+    print 'Iter: %i, Loss Generator: %.4f, Loss Discriminator: %.4f, Penalty: %.2e, IS: %.2f, FID: %.2f, Time: %.4f' % (
+        n_gen_update, avg_loss_G, avg_loss_D, avg_penalty,
+        gen_inception_score, gen_fid_score, time.time() - t)
 
     f_writter.writerow((n_gen_update, avg_loss_G, avg_loss_D, avg_penalty, time.time() - t))
     f.flush()
