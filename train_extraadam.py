@@ -57,6 +57,8 @@ parser.add_argument('-nfg', '--num-filters-gen', default=128, type=int)
 parser.add_argument('-gp', '--gradient-penalty', default=10, type=float)
 parser.add_argument('-m', '--mode', choices=('gan', 'ns-gan', 'wgan'), default='wgan')
 parser.add_argument('-c', '--clip', default=0.01, type=float)
+parser.add_argument('-p', '--prox', choices=('1norm'), default='1norm')
+parser.add_argument('-rp', '--reg-param', default=0, type=float)
 parser.add_argument('-d', '--distribution', choices=('normal', 'uniform'), default='normal')
 parser.add_argument('--batchnorm-dis', action='store_true')
 parser.add_argument('--seed', default=1234, type=int)
@@ -85,10 +87,13 @@ if args.default:
         data = json.load(f)
     args = argparse.Namespace(**data)
 
+# It is really important to set different learning rates for the discriminator and generator
+LEARNING_RATE_G = args.learning_rate_gen
+LEARNING_RATE_D = args.learning_rate_dis
+PROX = args.prox
+REG_PARAM = args.reg_param
 BATCH_SIZE = args.batch_size
 N_ITER = args.num_iter
-LEARNING_RATE_G = args.learning_rate_gen # It is really important to set different learning rates for the discriminator and generator
-LEARNING_RATE_D = args.learning_rate_dis
 BETA_1 = args.beta1
 BETA_2 = args.beta2
 BETA_EMA = args.ema
@@ -113,9 +118,19 @@ n_dis_update = 0
 total_time = 0
 
 if GRADIENT_PENALTY:
-    OUTPUT_PATH = os.path.join(OUTPUT_PATH, '%s_%s-gp'%(MODEL, MODE), '%s/lrd=%.1e_lrg=%.1e/s%i/%i'%('extra_adam', LEARNING_RATE_D, LEARNING_RATE_G, SEED, int(time.time())))
+    OUTPUT_PATH = os.path.join(OUTPUT_PATH, '%s_%s-gp' % (MODEL, MODE),
+                               '%s/lrd=%.1e_lrg=%.1e/s%i/%i' % ('extra_adam',
+                                                                LEARNING_RATE_D, LEARNING_RATE_G, SEED,
+                                                                int(time.time())))
+elif REG_PARAM:
+    OUTPUT_PATH = os.path.join(OUTPUT_PATH, '%s_%s-prox' % (MODEL, MODE),
+                               '%s/lrd=%.1e_lrg=%.1e/rp=%.1e/s%i/%i' % ('extra_adam',
+                                                                LEARNING_RATE_D, LEARNING_RATE_G, REG_PARAM,
+                                                                SEED, int(time.time())))
 else:
-    OUTPUT_PATH = os.path.join(OUTPUT_PATH, '%s_%s'%(MODEL, MODE), '%s/lrd=%.1e_lrg=%.1e/s%i/%i'%('extra_adam', LEARNING_RATE_D, LEARNING_RATE_G, SEED, int(time.time())))
+    OUTPUT_PATH = os.path.join(OUTPUT_PATH, '%s_%s' % (MODEL, MODE),
+                               '%s/lrd=%.1e_lrg=%.1e/s%i/%i' % ('extra_adam', LEARNING_RATE_D,
+                                                                LEARNING_RATE_G, SEED, int(time.time())))
 
 if TENSORBOARD_FLAG:
     from tensorboardX import SummaryWriter
@@ -286,9 +301,17 @@ while n_gen_update < N_ITER:
         for p in dis.parameters():
             p.requires_grad = True
 
-        if MODE =='wgan' and not GRADIENT_PENALTY:
+        if MODE == 'wgan':
+            nonzeros = 0.
             for p in dis.parameters():
-                p.data.clamp_(-CLIP, CLIP)
+                if REG_PARAM:
+                    if PROX == '1norm':
+                        p.data = utils.prox_1norm(p.data, REG_PARAM*LEARNING_RATE_D)
+                        nonzeros += p.nonzero().size(0)
+                    else:
+                        raise("not implemented")
+                elif not GRADIENT_PENALTY:
+                    p.data.clamp_(-CLIP, CLIP)
 
         total_time += time.time() - _t
 

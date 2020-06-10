@@ -60,6 +60,8 @@ parser.add_argument('-nfg', '--num-filters-gen', default=128, type=int)
 parser.add_argument('-gp', '--gradient-penalty', default=10, type=float)
 parser.add_argument('-m', '--mode', choices=('gan', 'ns-gan', 'wgan'), default='wgan')
 parser.add_argument('-c', '--clip', default=0.01, type=float)
+parser.add_argument('-p', '--prox', choices=('1norm'), default='1norm')
+parser.add_argument('-rp', '--reg-param', default=0, type=float)
 parser.add_argument('-d', '--distribution', choices=('normal', 'uniform'), default='normal')
 parser.add_argument('--batchnorm-dis', action='store_true')
 parser.add_argument('--seed', default=1234, type=int)
@@ -76,6 +78,12 @@ OUTPUT_PATH = args.output
 TENSORBOARD_FLAG = args.tensorboard
 INCEPTION_SCORE_FLAG = args.inception_score
 UPDATE_FREQUENCY = args.update_frequency
+PROX = args.prox
+REG_PARAM = args.reg_param
+
+SEED = args.seed
+torch.manual_seed(SEED)
+np.random.seed(SEED)
 
 if args.default:
     try:
@@ -111,17 +119,24 @@ RESOLUTION = 32
 N_CHANNEL = 3
 START_EPOCH = 0
 EVAL_FREQ = 10000
-SEED = args.seed
-torch.manual_seed(SEED)
-np.random.seed(SEED)
 n_gen_update = 0
 n_dis_update = 0
 total_time = 0
 
-if GRADIENT_PENALTY:
-    OUTPUT_PATH = os.path.join(OUTPUT_PATH, '%s_%s-gp'%(MODEL, MODE), '%s_%i/lrd=%.1e_lrg=%.1e/s%i/%i'%('adam', UPDATE_FREQUENCY, LEARNING_RATE_D, LEARNING_RATE_G, SEED, int(time.time())))
+if GRADIENT_PENALTY and REG_PARAM:
+    OUTPUT_PATH = os.path.join(OUTPUT_PATH, '%s_%s-gp-prox' % (MODEL, MODE), '%s_%i/lrd=%.1e_lrg=%.1e/rp=%.1e/s%i/%i'
+                               % ('adam', UPDATE_FREQUENCY, LEARNING_RATE_D, LEARNING_RATE_G, REG_PARAM, SEED,
+                                  int(time.time())))
+elif GRADIENT_PENALTY:
+    OUTPUT_PATH = os.path.join(OUTPUT_PATH, '%s_%s-gp' % (MODEL, MODE), '%s_%i/lrd=%.1e_lrg=%.1e/s%i/%i' %
+                               ('adam', UPDATE_FREQUENCY, LEARNING_RATE_D, LEARNING_RATE_G, SEED, int(time.time())))
+elif REG_PARAM:
+    OUTPUT_PATH = os.path.join(OUTPUT_PATH, '%s_%s-prox' % (MODEL, MODE), '%s_%i/lrd=%.1e_lrg=%.1e/rp=%.1e/s%i/%i' %
+                               ('adam', UPDATE_FREQUENCY, LEARNING_RATE_D, LEARNING_RATE_G, REG_PARAM, SEED,
+                                int(time.time())))
 else:
-    OUTPUT_PATH = os.path.join(OUTPUT_PATH, '%s_%s'%(MODEL, MODE), '%s_%i/lrd=%.1e_lrg=%.1e/s%i/%i'%('adam', UPDATE_FREQUENCY, LEARNING_RATE_D, LEARNING_RATE_G, SEED, int(time.time())))
+    OUTPUT_PATH = os.path.join(OUTPUT_PATH, '%s_%s' % (MODEL, MODE), '%s_%i/lrd=%.1e_lrg=%.1e/s%i/%i' %
+                               ('adam', UPDATE_FREQUENCY, LEARNING_RATE_D, LEARNING_RATE_G, SEED, int(time.time())))
 
 if TENSORBOARD_FLAG:
     from tensorboardX import SummaryWriter
@@ -241,6 +256,7 @@ while n_gen_update < N_ITER:
     d_samples = 0
     g_samples = 0
     penalty = Variable(torch.Tensor([0.]))
+    L1_reg = Variable(torch.Tensor([0.]))
     if CUDA:
         penalty = penalty.cuda(0)
     for i, data in enumerate(trainloader):
@@ -266,6 +282,9 @@ while n_gen_update < N_ITER:
 
             if GRADIENT_PENALTY:
                 penalty = dis.get_penalty(x_true.data, x_gen.data)
+            if REG_PARAM:
+                L1_reg = dis.get_1norm()  # won't be differentiated
+                dis_loss += L1_reg * REG_PARAM
 
             loss = dis_loss + GRADIENT_PENALTY*penalty
             if UPDATE_FREQUENCY == 1:
@@ -275,9 +294,17 @@ while n_gen_update < N_ITER:
 
             dis_optimizer.step()
 
-            if MODE =='wgan' and not GRADIENT_PENALTY:
+            if MODE == 'wgan':
+                nonzeros = 0.
                 for p in dis.parameters():
-                    p.data.clamp_(-CLIP, CLIP)
+                    if REG_PARAM:
+                        if PROX == '1norm':
+                            p.data = utils.prox_1norm(p.data, REG_PARAM*LEARNING_RATE_D)
+                            nonzeros += p.nonzero().size(0)
+                        else:
+                            raise("not implemented")
+                    elif not GRADIENT_PENALTY:
+                        p.data.clamp_(-CLIP, CLIP)
 
             n_dis_update += 1
 
@@ -344,14 +371,16 @@ while n_gen_update < N_ITER:
     avg_loss_D /= d_samples
     avg_penalty /= d_samples
 
-    print 'Iter: %i, Loss Generator: %.4f, Loss Discriminator: %.4f, Penalty: %.2e, IS: %.2f, Time: %.4f'%(n_gen_update, avg_loss_G, avg_loss_D, avg_penalty, gen_inception_score, time.time() - t)
+    # console output
+    strout = 'Iter: %i, Loss Gen: %.4f, Loss Dis: %.4f, ' % (n_gen_update, avg_loss_G, avg_loss_D)
+    if GRADIENT_PENALTY:
+        strout = strout + 'Penalty: %.2e, ' % avg_penalty
+    if REG_PARAM:
+        strout = strout + 'L1norm: %.2e, ' % (L1_reg*REG_PARAM)
+    print strout + 'IS: %.2f, FID: %.2f, Time: %.4f' % (gen_inception_score, gen_fid_score, time.time() - t)
 
-    f_writter.writerow((n_gen_update, avg_loss_G, avg_loss_D, avg_penalty, time.time() - t))
+    f_writter.writerow((n_gen_update, avg_loss_G, avg_loss_D, avg_penalty, L1_reg.item()*REG_PARAM, time.time() - t))
     f.flush()
-
-    x_gen = gen(z_examples)
-    x = utils.unormalize(x_gen)
-    torchvision.utils.save_image(x.data, os.path.join(OUTPUT_PATH, 'gen/%i.png' % n_gen_update), 10)
 
     if TENSORBOARD_FLAG:
         writer.add_scalar('loss_G', avg_loss_G, n_gen_update)

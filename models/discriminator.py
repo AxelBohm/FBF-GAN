@@ -33,8 +33,12 @@ class Discriminator(nn.Module):
     def forward(self):
         raise NotImplementedError()
 
+    def get_1norm(self):
+        """compute the 1 norm of the weights
+        """
+        return sum(torch.norm(p.data, 1) for p in self.parameters())
+
     def get_penalty(self, x_true, x_gen):
-        x_true = x_true.view_as(x_gen)
         alpha = torch.rand((len(x_true),)+(1,)*(x_true.dim()-1))
         if x_true.is_cuda:
             alpha = alpha.cuda(x_true.get_device())

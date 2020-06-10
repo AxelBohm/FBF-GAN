@@ -48,19 +48,21 @@ parser = argparse.ArgumentParser()
 parser.add_argument('output')
 parser.add_argument('--model', choices=('resnet', 'dcgan'), default='resnet')
 parser.add_argument('--cuda', action='store_true')
-parser.add_argument('-bs' ,'--batch-size', default=64, type=int)
+parser.add_argument('-bs', '--batch-size', default=64, type=int)
 parser.add_argument('--num-iter', default=500000, type=int)
 parser.add_argument('-lrd', '--learning-rate-dis', default=5e-4, type=float)
 parser.add_argument('-lrg', '--learning-rate-gen', default=5e-5, type=float)
-parser.add_argument('-b1' ,'--beta1', default=0.5, type=float)
-parser.add_argument('-b2' ,'--beta2', default=0.9, type=float)
+parser.add_argument('-b1', '--beta1', default=0.5, type=float)
+parser.add_argument('-b2', '--beta2', default=0.9, type=float)
 parser.add_argument('-ema', default=0.9999, type=float)
-parser.add_argument('-nz' ,'--num-latent', default=128, type=int)
-parser.add_argument('-nfd' ,'--num-filters-dis', default=128, type=int)
-parser.add_argument('-nfg' ,'--num-filters-gen', default=128, type=int)
+parser.add_argument('-nz', '--num-latent', default=128, type=int)
+parser.add_argument('-nfd', '--num-filters-dis', default=128, type=int)
+parser.add_argument('-nfg', '--num-filters-gen', default=128, type=int)
 parser.add_argument('-gp', '--gradient-penalty', default=10, type=float)
-parser.add_argument('-m', '--mode', choices=('gan','ns-gan', 'wgan'), default='wgan')
+parser.add_argument('-m', '--mode', choices=('gan', 'ns-gan', 'wgan'), default='wgan')
 parser.add_argument('-c', '--clip', default=0.01, type=float)
+parser.add_argument('-p', '--prox', choices=('1norm'), default='1norm')
+parser.add_argument('-rp', '--reg-param', default=0, type=float)
 parser.add_argument('-d', '--distribution', choices=('normal', 'uniform'), default='normal')
 parser.add_argument('--batchnorm-dis', action='store_true')
 parser.add_argument('--seed', default=1234, type=int)
@@ -91,8 +93,11 @@ if args.default:
 
 BATCH_SIZE = args.batch_size
 N_ITER = args.num_iter
-LEARNING_RATE_G = args.learning_rate_gen # It is really important to set different learning rates for the discriminator and generator
+# It is really important to set different learning rates for the discriminator and generator
+LEARNING_RATE_G = args.learning_rate_gen
 LEARNING_RATE_D = args.learning_rate_dis
+REG_PARAM = args.reg_param
+PROX = args.prox
 BETA_1 = args.beta1
 BETA_2 = args.beta2
 BETA_EMA = args.ema
@@ -117,9 +122,14 @@ n_dis_update = 0
 total_time = 0
 
 if GRADIENT_PENALTY:
-    OUTPUT_PATH = os.path.join(OUTPUT_PATH, '%s_%s-gp'%(MODEL, MODE), '%s/lrd=%.1e_lrg=%.1e/s%i/%i'%('optimisticadam', LEARNING_RATE_D, LEARNING_RATE_G, SEED, int(time.time())))
+    OUTPUT_PATH = os.path.join(OUTPUT_PATH, '%s_%s-gp' % (MODEL, MODE), '%s/lrd=%.1e_lrg=%.1e/s%i/%i' %
+                               ('optimisticadam', LEARNING_RATE_D, LEARNING_RATE_G, SEED, int(time.time())))
+elif REG_PARAM:
+    OUTPUT_PATH = os.path.join(OUTPUT_PATH, '%s_%s-prox' % (MODEL, MODE), '%s/lrd=%.1e_lrg=%.1e/rp=%.1e/s%i/%i' %
+                               ('optimisticadam', LEARNING_RATE_D, LEARNING_RATE_G, REG_PARAM, SEED, int(time.time())))
 else:
-    OUTPUT_PATH = os.path.join(OUTPUT_PATH, '%s_%s'%(MODEL, MODE), '%s/lrd=%.1e_lrg=%.1e/s%i/%i'%('optimisticadam', LEARNING_RATE_D, LEARNING_RATE_G, SEED, int(time.time())))
+    OUTPUT_PATH = os.path.join(OUTPUT_PATH, '%s_%s' % (MODEL, MODE), '%s/lrd=%.1e_lrg=%.1e/s%i/%i' %
+                               ('optimisticadam', LEARNING_RATE_D, LEARNING_RATE_G, SEED, int(time.time())))
 
 if TENSORBOARD_FLAG:
     from tensorboardX import SummaryWriter
@@ -264,9 +274,18 @@ while n_gen_update < N_ITER:
         dis_optimizer.zero_grad()
         dis_loss.backward(retain_graph=True)
         dis_optimizer.step()
-        if MODE =='wgan' and not GRADIENT_PENALTY:
+        if MODE == 'wgan':
+            nonzeros = 0.
             for p in dis.parameters():
-                p.data.clamp_(-CLIP, CLIP)
+                if REG_PARAM:
+                    if PROX == '1norm':
+                        p.data = utils.prox_1norm(p.data, REG_PARAM*LEARNING_RATE_D)
+                        nonzeros += p.nonzero().size(0)
+                    else:
+                        raise("not implemented")
+                elif not GRADIENT_PENALTY:
+                    p.data.clamp_(-CLIP, CLIP)
+
         for p in gen.parameters():
             p.requires_grad = True
 
@@ -281,7 +300,7 @@ while n_gen_update < N_ITER:
         n_gen_update += 1
         for j, param in enumerate(gen.parameters()):
             gen_param_avg[j] = gen_param_avg[j]*n_gen_update/(n_gen_update+1.) + param.data.clone()/(n_gen_update+1.)
-            gen_param_ema[j] = gen_param_ema[j]*BETA_EMA+ param.data.clone()*(1-BETA_EMA)
+            gen_param_ema[j] = gen_param_ema[j]*BETA_EMA + param.data.clone()*(1-BETA_EMA)
 
         total_time += time.time() - _t
 
@@ -290,7 +309,7 @@ while n_gen_update < N_ITER:
         avg_penalty += penalty.item()*len(x_true)
         num_samples += len(x_true)
 
-        if n_gen_update%EVAL_FREQ == 1:
+        if n_gen_update % EVAL_FREQ == 1:
             if INCEPTION_SCORE_FLAG:
                 gen_inception_score = get_inception_score()[0]
                 try:
@@ -304,9 +323,9 @@ while n_gen_update < N_ITER:
                 if TENSORBOARD_FLAG:
                     writer.add_scalar('inception_score', gen_inception_score, n_gen_update)
 
-
-            torch.save({'args': vars(args), 'n_gen_update': n_gen_update, 'total_time': total_time, 'state_gen': gen.state_dict(), 'gen_param_avg': gen_param_avg, 'gen_param_ema': gen_param_ema}, os.path.join(OUTPUT_PATH, "checkpoints/%i.state"%n_gen_update))
-
+            torch.save({'args': vars(args), 'n_gen_update': n_gen_update, 'total_time': total_time, 'state_gen':
+                        gen.state_dict(), 'gen_param_avg': gen_param_avg, 'gen_param_ema': gen_param_ema},
+                       os.path.join(OUTPUT_PATH, "checkpoints/%i.state" % n_gen_update))
 
         n_iteration_t += 1
 
@@ -314,7 +333,8 @@ while n_gen_update < N_ITER:
     avg_loss_D /= num_samples
     avg_penalty /= num_samples
 
-    print 'Iter: %i, Loss Generator: %.4f, Loss Discriminator: %.4f, Penalty: %.2e, IS: %.2f, Time: %.4f'%(n_gen_update, avg_loss_G, avg_loss_D, avg_penalty, gen_inception_score, time.time() - t)
+    print 'Iter: %i, Loss Generator: %.4f, Loss Discriminator: %.4f, Penalty: %.2e, IS: %.2f, FID: %.2f, Time: %.4f' % \
+        (n_gen_update, avg_loss_G, avg_loss_D, avg_penalty, gen_inception_score, gen_fid_score, time.time() - t)
 
     f_writter.writerow((n_gen_update, avg_loss_G, avg_loss_D, avg_penalty, time.time() - t))
     f.flush()

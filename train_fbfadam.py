@@ -66,7 +66,6 @@ parser.add_argument('--seed', default=1318, type=int)
 parser.add_argument('--tensorboard', action='store_true')
 parser.add_argument('--inception-score', action='store_true')
 parser.add_argument('--default', action='store_true')
-parser.add_argument('--test', action='store_true')
 parser.add_argument('--inertia', default=0.0, type=float)
 args = parser.parse_args()
 
@@ -80,33 +79,28 @@ CLIP = args.clip
 PROX = args.prox
 REG_PARAM = args.reg_param
 INERTIA = args.inertia
-TEST = args.test
 DEFAULT = args.default
 
 SEED = args.seed
 torch.manual_seed(SEED)
 np.random.seed(SEED)
 
+BATCH_SIZE = args.batch_size
+
+if DEFAULT:
+    if REG_PARAM:
+        config = "config/default_dcgan_wganl1_fbfadam.json"
+    else:
+        config = "config/default_dcgan_wgan_fbfadam.json"
+
+    with open(config) as f:
+        data = json.load(f)
+    args = argparse.Namespace(**data)
+
+
 # It is really important to set different learning rates for the discriminator and generator
 LEARNING_RATE_G = args.learning_rate_gen
 LEARNING_RATE_D = args.learning_rate_dis
-BATCH_SIZE = args.batch_size
-
-if TEST:
-    config = "config/hyperparams_test_dcgan_wgan_fbfadam.json"
-
-    with open(config) as f:
-        data = json.load(f)
-    args = argparse.Namespace(**data)
-
-if DEFAULT:
-    config = "config/default_dcgan_wgan_fbfadam.json"
-
-    with open(config) as f:
-        data = json.load(f)
-    args = argparse.Namespace(**data)
-
-
 N_ITER = args.num_iter
 BETA_1 = args.beta1
 BETA_2 = args.beta2
