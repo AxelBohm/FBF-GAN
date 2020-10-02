@@ -60,6 +60,7 @@ parser.add_argument('-m', '--mode', choices=('gan', 'ns-gan', 'wgan'), default='
 parser.add_argument('-c', '--clip', default=0.01, type=float)
 parser.add_argument('-p', '--prox', choices=('1norm'), default='1norm')
 parser.add_argument('-rp', '--reg-param', default=0, type=float)
+parser.add_argument('-sn', '--spectral-norm', action='store_true')
 parser.add_argument('-d', '--distribution', choices=('normal', 'uniform'), default='normal')
 parser.add_argument('--batchnorm-dis', action='store_true')
 parser.add_argument('--seed', default=1318, type=int)
@@ -67,6 +68,7 @@ parser.add_argument('--tensorboard', action='store_true')
 parser.add_argument('--inception-score', action='store_true')
 parser.add_argument('--default', action='store_true')
 parser.add_argument('--inertia', default=0.0, type=float)
+parser.add_argument('-pi', '--power-iter', default=1, type=int)
 args = parser.parse_args()
 
 CUDA = args.cuda
@@ -78,21 +80,26 @@ INCEPTION_SCORE_FLAG = args.inception_score
 CLIP = args.clip
 PROX = args.prox
 REG_PARAM = args.reg_param
+SPEC_NORM = args.spectral_norm
 INERTIA = args.inertia
 DEFAULT = args.default
+POWER_ITER = args.power_iter
 
 SEED = args.seed
 torch.manual_seed(SEED)
 np.random.seed(SEED)
-
 BATCH_SIZE = args.batch_size
 
-if DEFAULT:
-    if REG_PARAM:
-        config = "config/default_dcgan_wganl1_fbfadam.json"
-    else:
-        config = "config/default_dcgan_wgan_fbfadam.json"
 
+if args.default:
+    if args.model == 'resnet' and args.gradient_penalty != 0:
+        config = "config/default_resnet_wgangp_fbfadam.json"
+    elif args.model == 'dcgan' and args.gradient_penalty != 0:
+        config = "config/default_dcgan_wgangp_fbfadam.json"
+    elif args.model == 'dcgan' and args.gradient_penalty == 0:
+        config = "config/default_dcgan_wgan_fbfadam.json"
+    else:
+        raise ValueError("Not default config available for this.")
     with open(config) as f:
         data = json.load(f)
     args = argparse.Namespace(**data)
@@ -121,17 +128,32 @@ n_gen_update = 0
 n_dis_update = 0
 total_time = 0
 
-if GRADIENT_PENALTY:
-    OUTPUT_PATH = os.path.join(OUTPUT_PATH, '%s_%s-gp' % (MODEL, MODE), '%s/lrd=%.1e_lrg=%.1e/inertia=%.2f/s%i/%i' %
-                               ('fbf_adam', LEARNING_RATE_D, LEARNING_RATE_G, INERTIA, SEED, int(time.time())))
+if GRADIENT_PENALTY and SPEC_NORM :
+    OUTPUT_PATH = os.path.join(OUTPUT_PATH, '%s_%s-gp-sn' % (MODEL, MODE),
+                               'pi=%i/%s/lrd=%.1e_lrg=%.1e/inertia=%.2f/s%i/%i' % (POWER_ITER, 'fbf_adam',
+                                                                LEARNING_RATE_D, LEARNING_RATE_G,
+                                                                INERTIA, SEED, int(time.time())))
+elif GRADIENT_PENALTY:
+    OUTPUT_PATH = os.path.join(OUTPUT_PATH, '%s_%s-gp' % (MODEL, MODE),
+                               '%s/lrd=%.1e_lrg=%.1e/inertia=%.2f/s%i/%i' % ('fbf_adam',
+                                                                LEARNING_RATE_D, LEARNING_RATE_G,
+                                                                INERTIA, SEED, int(time.time())))
 elif REG_PARAM:
     OUTPUT_PATH = os.path.join(OUTPUT_PATH, '%s_%s-prox' % (MODEL, MODE),
-                               '%s/lrd=%.1e_lrg=%.1e/rp=%.1e/inertia=%.2f/s%i/%i' %
-                               ('fbf_adam', LEARNING_RATE_D, LEARNING_RATE_G, REG_PARAM, INERTIA, SEED,
-                                int(time.time())))
+                               '%s/lrd=%.1e_lrg=%.1e/rp=%.1e/inertia=%.2f/s%i/%i' % ('fbf_adam',
+                                                                LEARNING_RATE_D, LEARNING_RATE_G, REG_PARAM,
+                                                                INERTIA, SEED, int(time.time())))
+elif SPEC_NORM:
+    OUTPUT_PATH = os.path.join(OUTPUT_PATH, '%s_%s-sn' % (MODEL, MODE),
+                               'pi=%i/%s/lrd=%.1e_lrg=%.1e/inertia=%.2f/s%i/%i' % (POWER_ITER, 'fbf_adam',
+                                                                LEARNING_RATE_D, LEARNING_RATE_G,
+                                                                INERTIA, SEED, int(time.time())))
 else:
-    OUTPUT_PATH = os.path.join(OUTPUT_PATH, '%s_%s' % (MODEL, MODE), '%s/lrd=%.1e_lrg=%.1e/inertia=%.2f/s%i/%i' %
-                               ('fbf_adam', LEARNING_RATE_D, LEARNING_RATE_G, INERTIA, SEED, int(time.time())))
+    OUTPUT_PATH = os.path.join(OUTPUT_PATH, '%s_%s' % (MODEL, MODE),
+                               '%s/lrd=%.1e_lrg=%.1e/inertia=%.2f/s%i/%i' % ('fbf_adam',
+                                                                LEARNING_RATE_D, LEARNING_RATE_G,
+                                                                INERTIA, SEED, int(time.time())))
+print OUTPUT_PATH
 
 if TENSORBOARD_FLAG:
     from tensorboardX import SummaryWriter
@@ -216,9 +238,9 @@ if CUDA:
 gen.apply(lambda x: utils.weight_init(x, mode='normal'))
 dis.apply(lambda x: utils.weight_init(x, mode='normal'))
 
-dis_optimizer = FBFAdam(dis.parameters(), lr=LEARNING_RATE_D, betas=(BETA_1, BETA_2), inertia=INERTIA)
-# for generator FBF and Extragradient is the same in theory (when no projection is involved)
-gen_optimizer = FBFAdam(gen.parameters(), lr=LEARNING_RATE_G, betas=(BETA_1, BETA_2), inertia=INERTIA)
+dis_optimizer = FBFAdam(dis.parameters(), lr=LEARNING_RATE_D, betas=(BETA_1, BETA_2), inertia = INERTIA)
+## for generator FBF and Extragradient is the same in theory (when no projection is involved)
+gen_optimizer = FBFAdam(gen.parameters(), lr=LEARNING_RATE_G, betas=(BETA_1, BETA_2), inertia = INERTIA)
 
 with open(os.path.join(OUTPUT_PATH, 'config.json'), 'wb') as f:
     json.dump(vars(args), f)
@@ -245,6 +267,9 @@ numel_weights = sum(p.numel() for p in dis.parameters())
 n_iteration_t = 0
 gen_inception_score = 0
 gen_fid_score = 0
+# initialize eigenvectors
+len_params = sum(1 for _ in dis.parameters())
+u = [None] * len_params
 while n_gen_update < N_ITER:
     t = time.time()
     avg_loss_G = 0
@@ -273,7 +298,7 @@ while n_gen_update < N_ITER:
             penalty = dis.get_penalty(x_true.data, x_gen.data)
             dis_loss += GRADIENT_PENALTY*penalty
         if REG_PARAM:
-            L1_reg = dis.get_1norm()  # won't be differentiated
+            L1_reg = dis.get_1norm() # won't be differentiated
             dis_loss += L1_reg * REG_PARAM
 
         for p in gen.parameters():
@@ -285,13 +310,16 @@ while n_gen_update < N_ITER:
             dis_optimizer.extrapolation()
             if MODE == 'wgan':
                 nonzeros = 0.
-                for p in dis.parameters():
+                for i, (param_type, p) in enumerate(dis.state_dict().items()):
                     if REG_PARAM:
                         if PROX == '1norm':
                             p.data = utils.prox_1norm(p.data, REG_PARAM*LEARNING_RATE_D)
                             nonzeros += p.nonzero().size(0)
                         else:
                             raise("not implemented")
+                    elif SPEC_NORM:
+                        if 'weight' in param_type:
+                            p.data, u[i] = utils.spectral_normalize(p.data, u[i], iter = POWER_ITER)
                     elif not GRADIENT_PENALTY:
                         p.data.clamp_(-CLIP, CLIP)
         else:
@@ -317,6 +345,7 @@ while n_gen_update < N_ITER:
 
         for p in dis.parameters():
             p.requires_grad = True
+
 
         total_time += time.time() - _t
 
@@ -364,13 +393,13 @@ while n_gen_update < N_ITER:
         print 'Iter: %i, Loss Gen: %.4f, Loss Dis: %.4f, NNZ: %.2f, L1norm: %.2e, IS: %.2f, FID: %.2f, Time: %.4f' % (
             n_gen_update, avg_loss_G, avg_loss_D, nnz_perc, L1_reg*REG_PARAM,
             gen_inception_score, gen_fid_score, time.time() - t)
-        f_writter.writerow((n_gen_update, avg_loss_G, avg_loss_D, nnz_perc,
-                            avg_penalty, L1_reg.item()*REG_PARAM, time.time() - t))
+        f_writter.writerow((n_gen_update, avg_loss_G, avg_loss_D, nnz_perc, avg_penalty, L1_reg.item()*REG_PARAM, time.time() - t))
     else:
         print 'Iter: %i, Loss Gen: %.4f, Loss Dis: %.4f, Penalty: %.2e, IS: %.2f, FID: %.2f, Time: %.4f' % (
                 n_gen_update, avg_loss_G, avg_loss_D, avg_penalty,
                 gen_inception_score, gen_fid_score, time.time() - t)
         f_writter.writerow((n_gen_update, avg_loss_G, avg_loss_D, nnz_perc, avg_penalty, time.time() - t))
+
 
     f.flush()
 
