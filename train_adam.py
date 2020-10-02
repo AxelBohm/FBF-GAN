@@ -62,6 +62,7 @@ parser.add_argument('-m', '--mode', choices=('gan', 'ns-gan', 'wgan'), default='
 parser.add_argument('-c', '--clip', default=0.01, type=float)
 parser.add_argument('-p', '--prox', choices=('1norm'), default='1norm')
 parser.add_argument('-rp', '--reg-param', default=0, type=float)
+parser.add_argument('-sn', '--spectral-norm', action='store_true')
 parser.add_argument('-d', '--distribution', choices=('normal', 'uniform'), default='normal')
 parser.add_argument('--batchnorm-dis', action='store_true')
 parser.add_argument('--seed', default=1234, type=int)
@@ -84,6 +85,7 @@ REG_PARAM = args.reg_param
 SEED = args.seed
 torch.manual_seed(SEED)
 np.random.seed(SEED)
+SPEC_NORM = args.spectral_norm
 
 if args.default:
     try:
@@ -124,16 +126,22 @@ n_dis_update = 0
 total_time = 0
 
 if GRADIENT_PENALTY and REG_PARAM:
-    OUTPUT_PATH = os.path.join(OUTPUT_PATH, '%s_%s-gp-prox' % (MODEL, MODE), '%s_%i/lrd=%.1e_lrg=%.1e/rp=%.1e/s%i/%i'
-                               % ('adam', UPDATE_FREQUENCY, LEARNING_RATE_D, LEARNING_RATE_G, REG_PARAM, SEED,
-                                  int(time.time())))
+    OUTPUT_PATH = os.path.join(OUTPUT_PATH, '%s_%s-gp-prox' % (MODEL, MODE), '%s_%i/lrd=%.1e_lrg=%.1e/rp=%.1e/s%i/%i' %
+                               ('adam', UPDATE_FREQUENCY, LEARNING_RATE_D, LEARNING_RATE_G, REG_PARAM, SEED, int(time.time())))
+elif GRADIENT_PENALTY and SPEC_NORM:
+    OUTPUT_PATH = os.path.join(OUTPUT_PATH, '%s_%s-gp-sn' % (MODEL, MODE), '%s_%i/lrd=%.1e_lrg=%.1e/s%i/%i' %
+                               ('adam', UPDATE_FREQUENCY, LEARNING_RATE_D, LEARNING_RATE_G, SEED, int(time.time())))
 elif GRADIENT_PENALTY:
     OUTPUT_PATH = os.path.join(OUTPUT_PATH, '%s_%s-gp' % (MODEL, MODE), '%s_%i/lrd=%.1e_lrg=%.1e/s%i/%i' %
                                ('adam', UPDATE_FREQUENCY, LEARNING_RATE_D, LEARNING_RATE_G, SEED, int(time.time())))
+elif SPEC_NORM:
+    OUTPUT_PATH = os.path.join(OUTPUT_PATH, '%s_%s-sn' % (MODEL, MODE), '%s_%i/lrd=%.1e_lrg=%.1e/s%i/%i' %
+                               ('adam', UPDATE_FREQUENCY, LEARNING_RATE_D, LEARNING_RATE_G, SEED, int(time.time())))
 elif REG_PARAM:
-    OUTPUT_PATH = os.path.join(OUTPUT_PATH, '%s_%s-prox' % (MODEL, MODE), '%s_%i/lrd=%.1e_lrg=%.1e/rp=%.1e/s%i/%i' %
-                               ('adam', UPDATE_FREQUENCY, LEARNING_RATE_D, LEARNING_RATE_G, REG_PARAM, SEED,
-                                int(time.time())))
+    OUTPUT_PATH = os.path.join(OUTPUT_PATH, '%s_%s-prox' % (MODEL, MODE),
+                               '%s_%i/lrd=%.1e_lrg=%.1e/rp=%.1e/s%i/%i' % ('adam', UPDATE_FREQUENCY,
+                                                                           LEARNING_RATE_D, LEARNING_RATE_G, REG_PARAM,
+                                                                           SEED, int(time.time())))
 else:
     OUTPUT_PATH = os.path.join(OUTPUT_PATH, '%s_%s' % (MODEL, MODE), '%s_%i/lrd=%.1e_lrg=%.1e/s%i/%i' %
                                ('adam', UPDATE_FREQUENCY, LEARNING_RATE_D, LEARNING_RATE_G, SEED, int(time.time())))
@@ -248,6 +256,9 @@ print 'Training...'
 n_iteration_t = 0
 gen_inception_score = 0
 gen_fid_score = 0
+# initialize eigenvectors
+len_params = sum(1 for _ in dis.parameters())
+u = [None] * len_params
 while n_gen_update < N_ITER:
     t = time.time()
     avg_loss_G = 0
@@ -335,7 +346,8 @@ while n_gen_update < N_ITER:
 
             n_gen_update += 1
             for j, param in enumerate(gen.parameters()):
-                gen_param_avg[j] = gen_param_avg[j]*n_gen_update/(n_gen_update+1.) + param.data.clone()/(n_gen_update+1.)
+                gen_param_avg[j] = gen_param_avg[j]*n_gen_update / \
+                    (n_gen_update+1.) + param.data.clone()/(n_gen_update+1.)
                 gen_param_ema[j] = gen_param_ema[j]*BETA_EMA + param.data.clone()*(1-BETA_EMA)
 
             g_samples += len(x_true)
@@ -364,9 +376,8 @@ while n_gen_update < N_ITER:
                     if TENSORBOARD_FLAG:
                         writer.add_scalar('inception_score', gen_inception_score, n_gen_update)
 
-                torch.save({'args': vars(args), 'n_gen_update': n_gen_update, 'total_time': total_time, 'state_gen':
-                            gen.state_dict(), 'gen_param_avg': gen_param_avg, 'gen_param_ema': gen_param_ema},
-                           os.path.join(OUTPUT_PATH, "checkpoints/%i.state" % n_gen_update))
+                torch.save({'args': vars(args), 'n_gen_update': n_gen_update, 'total_time': total_time, 'state_gen': gen.state_dict(
+                ), 'gen_param_avg': gen_param_avg, 'gen_param_ema': gen_param_ema}, os.path.join(OUTPUT_PATH, "checkpoints/%i.state" % n_gen_update))
 
         n_iteration_t += 1
 
