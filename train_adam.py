@@ -272,52 +272,54 @@ while n_gen_update < N_ITER:
         x_gen = gen(z)
         p_true, p_gen = dis(x_true), dis(x_gen)
 
-        if UPDATE_FREQUENCY == 1 or (n_iteration_t+1) % UPDATE_FREQUENCY != 0:
-            for p in gen.parameters():
-                p.requires_grad = False
+        # discriminator update
+        for p in gen.parameters():
+            p.requires_grad = False
 
-            dis_optimizer.zero_grad()
+        dis_optimizer.zero_grad()
 
-            dis_loss = - utils.compute_gan_loss(p_true, p_gen, mode=MODE)
+        dis_loss = - utils.compute_gan_loss(p_true, p_gen, mode=MODE)
 
-            if GRADIENT_PENALTY:
-                penalty = dis.get_penalty(x_true.data, x_gen.data)
-            if REG_PARAM:
-                L1_reg = dis.get_1norm()  # won't be differentiated
-                dis_loss += L1_reg * REG_PARAM
+        if GRADIENT_PENALTY:
+            penalty = dis.get_penalty(x_true.data, x_gen.data)
+        if REG_PARAM:
+            L1_reg = dis.get_1norm()  # won't be differentiated
+            dis_loss += L1_reg * REG_PARAM
 
-            loss = dis_loss + GRADIENT_PENALTY*penalty
-            if UPDATE_FREQUENCY == 1:
-                loss.backward(retain_graph=True)
-            else:
-                loss.backward()
+        loss = dis_loss + GRADIENT_PENALTY*penalty
+        if UPDATE_FREQUENCY == 1:
+            loss.backward(retain_graph=True)
+        else:
+            loss.backward()
 
-            dis_optimizer.step()
+        dis_optimizer.step()
 
-            if MODE == 'wgan':
-                nonzeros = 0.
-                for p in dis.parameters():
-                    if REG_PARAM:
-                        if PROX == '1norm':
-                            p.data = utils.prox_1norm(p.data, REG_PARAM*LEARNING_RATE_D)
-                            nonzeros += p.nonzero().size(0)
-                        else:
-                            raise("not implemented")
-                    elif not GRADIENT_PENALTY:
-                        p.data.clamp_(-CLIP, CLIP)
+        if MODE == 'wgan':
+            nonzeros = 0.
+            for i, (param_type, p) in enumerate(dis.state_dict().items()):
+                if REG_PARAM:
+                    if PROX == '1norm':
+                        p.data = utils.prox_1norm(p.data, REG_PARAM*LEARNING_RATE_D)
+                        nonzeros += p.nonzero().size(0)
+                    else:
+                        raise("not implemented")
+                elif SPEC_NORM:
+                    if 'bias' not in param_type:
+                        p.data, u[i] = utils.spectral_normalize(p.data, u[i])
+                elif not GRADIENT_PENALTY:
+                    p.data.clamp_(-CLIP, CLIP)
 
-            n_dis_update += 1
+        n_dis_update += 1
 
-            avg_loss_D += dis_loss.item()*len(x_true)
-            avg_penalty += penalty.item()*len(x_true)
+        avg_loss_D += dis_loss.item()*len(x_true)
+        avg_penalty += penalty.item()*len(x_true)
 
-            d_samples += len(x_true)
+        d_samples += len(x_true)
 
-            for p in gen.parameters():
-                p.requires_grad = True
+        for p in gen.parameters():
+            p.requires_grad = True
 
-            total_time += time.time() - _t
-
+        # generator update
         if UPDATE_FREQUENCY == 1 or (n_iteration_t+1) % UPDATE_FREQUENCY == 0:
             for p in dis.parameters():
                 p.requires_grad = False
@@ -341,8 +343,9 @@ while n_gen_update < N_ITER:
             for p in dis.parameters():
                 p.requires_grad = True
 
-            total_time += time.time() - _t
+        total_time += time.time() - _t
 
+        if UPDATE_FREQUENCY == 1 or (n_iteration_t+1) % UPDATE_FREQUENCY == 0:
             if n_gen_update % EVAL_FREQ == 1:
                 if INCEPTION_SCORE_FLAG:
                     gen_inception_score = get_inception_score()[0]
