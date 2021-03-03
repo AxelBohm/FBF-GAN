@@ -62,6 +62,7 @@ parser.add_argument('-m', '--mode', choices=('gan','ns-gan', 'wgan'), default='w
 parser.add_argument('-c', '--clip', default=0.01, type=float)
 parser.add_argument('-p', '--prox', choices=('1norm'), default='1norm')
 parser.add_argument('-rp', '--reg-param', default=0, type=float)
+parser.add_argument('-sn', '--spectral-norm', action='store_true')
 parser.add_argument('-d', '--distribution', choices=('normal', 'uniform'), default='normal')
 parser.add_argument('--batchnorm-dis', action='store_true')
 parser.add_argument('--seed', default=1234, type=int)
@@ -84,6 +85,11 @@ REG_PARAM = args.reg_param
 SEED = args.seed
 torch.manual_seed(SEED)
 np.random.seed(SEED)
+SPEC_NORM = args.spectral_norm
+
+# It is really important to set different learning rates for the discriminator and generator
+LEARNING_RATE_G = args.learning_rate_gen
+LEARNING_RATE_D = args.learning_rate_dis
 
 if args.default:
     try:
@@ -98,8 +104,6 @@ if args.default:
         data = json.load(f)
     args = argparse.Namespace(**data)
 
-LEARNING_RATE_G = args.learning_rate_gen # It is really important to set different learning rates for the discriminator and generator
-LEARNING_RATE_D = args.learning_rate_dis
 BATCH_SIZE = args.batch_size
 N_ITER = args.num_iter
 BETA_1 = args.beta1
@@ -124,8 +128,12 @@ total_time = 0
 
 if GRADIENT_PENALTY  and REG_PARAM:
     OUTPUT_PATH = os.path.join(OUTPUT_PATH, '%s_%s-gp-prox'%(MODEL, MODE), '%s_%i/lrd=%.1e_lrg=%.1e/rp=%.1e/s%i/%i'%('adam', UPDATE_FREQUENCY, LEARNING_RATE_D, LEARNING_RATE_G, REG_PARAM, SEED, int(time.time())))
+elif GRADIENT_PENALTY and SPEC_NORM:
+    OUTPUT_PATH = os.path.join(OUTPUT_PATH, '%s_%s-gp-sn'%(MODEL, MODE), '%s_%i/lrd=%.1e_lrg=%.1e/s%i/%i'%('adam', UPDATE_FREQUENCY, LEARNING_RATE_D, LEARNING_RATE_G, SEED, int(time.time())))
 elif GRADIENT_PENALTY:
     OUTPUT_PATH = os.path.join(OUTPUT_PATH, '%s_%s-gp'%(MODEL, MODE), '%s_%i/lrd=%.1e_lrg=%.1e/s%i/%i'%('adam', UPDATE_FREQUENCY, LEARNING_RATE_D, LEARNING_RATE_G, SEED, int(time.time())))
+elif SPEC_NORM:
+    OUTPUT_PATH = os.path.join(OUTPUT_PATH, '%s_%s-sn'%(MODEL, MODE), '%s_%i/lrd=%.1e_lrg=%.1e/s%i/%i'%('adam', UPDATE_FREQUENCY, LEARNING_RATE_D, LEARNING_RATE_G, SEED, int(time.time())))
 elif REG_PARAM:
     OUTPUT_PATH = os.path.join(OUTPUT_PATH, '%s_%s-prox' % (MODEL, MODE),
                                '%s_%i/lrd=%.1e_lrg=%.1e/rp=%.1e/s%i/%i' % ('adam', UPDATE_FREQUENCY,
@@ -244,6 +252,9 @@ print 'Training...'
 n_iteration_t = 0
 gen_inception_score = 0
 gen_fid_score = 0
+# initialize eigenvectors
+len_params = sum(1 for _ in dis.parameters())
+u = [None] * len_params
 while n_gen_update < N_ITER:
     t = time.time()
     avg_loss_G = 0
@@ -268,52 +279,54 @@ while n_gen_update < N_ITER:
         x_gen = gen(z)
         p_true, p_gen = dis(x_true), dis(x_gen)
 
-        if UPDATE_FREQUENCY==1 or (n_iteration_t+1)%UPDATE_FREQUENCY != 0:
-            for p in gen.parameters():
-                p.requires_grad = False
+        # discriminator update 
+        for p in gen.parameters():
+            p.requires_grad = False
 
-            dis_optimizer.zero_grad()
+        dis_optimizer.zero_grad()
 
-            dis_loss = - utils.compute_gan_loss(p_true, p_gen, mode=MODE)
+        dis_loss = - utils.compute_gan_loss(p_true, p_gen, mode=MODE)
 
-            if GRADIENT_PENALTY:
-                penalty = dis.get_penalty(x_true.data, x_gen.data)
-            if REG_PARAM:
-                L1_reg = dis.get_1norm() # won't be differentiated
-                dis_loss += L1_reg * REG_PARAM
+        if GRADIENT_PENALTY:
+            penalty = dis.get_penalty(x_true.data, x_gen.data)
+        if REG_PARAM:
+            L1_reg = dis.get_1norm() # won't be differentiated
+            dis_loss += L1_reg * REG_PARAM
 
-            loss = dis_loss + GRADIENT_PENALTY*penalty
-            if UPDATE_FREQUENCY == 1:
-                loss.backward(retain_graph=True)
-            else:
-                loss.backward()
+        loss = dis_loss + GRADIENT_PENALTY*penalty
+        if UPDATE_FREQUENCY == 1:
+            loss.backward(retain_graph=True)
+        else:
+            loss.backward()
 
-            dis_optimizer.step()
+        dis_optimizer.step()
 
-            if MODE == 'wgan':
-                nonzeros = 0.
-                for p in dis.parameters():
-                    if REG_PARAM:
-                        if PROX == '1norm':
-                            p.data = utils.prox_1norm(p.data, REG_PARAM*LEARNING_RATE_D)
-                            nonzeros += p.nonzero().size(0)
-                        else:
-                            raise("not implemented")
-                    elif not GRADIENT_PENALTY:
-                        p.data.clamp_(-CLIP, CLIP)
+        if MODE == 'wgan':
+            nonzeros = 0.
+            for i, (param_type, p) in enumerate(dis.state_dict().items()):
+                if REG_PARAM:
+                    if PROX == '1norm':
+                        p.data = utils.prox_1norm(p.data, REG_PARAM*LEARNING_RATE_D)
+                        nonzeros += p.nonzero().size(0)
+                    else:
+                        raise("not implemented")
+                elif SPEC_NORM:
+                    if 'bias' not in param_type:
+                        p.data, u[i] = utils.spectral_normalize(p.data, u[i])
+                elif not GRADIENT_PENALTY:
+                    p.data.clamp_(-CLIP, CLIP)
 
-            n_dis_update += 1
+        n_dis_update += 1
 
-            avg_loss_D += dis_loss.item()*len(x_true)
-            avg_penalty += penalty.item()*len(x_true)
+        avg_loss_D += dis_loss.item()*len(x_true)
+        avg_penalty += penalty.item()*len(x_true)
 
-            d_samples += len(x_true)
+        d_samples += len(x_true)
 
-            for p in gen.parameters():
-                p.requires_grad = True
+        for p in gen.parameters():
+            p.requires_grad = True
 
-            total_time += time.time() - _t
-
+        # generator update
         if UPDATE_FREQUENCY==1 or (n_iteration_t+1)%UPDATE_FREQUENCY == 0:
             for p in dis.parameters():
                 p.requires_grad = False
@@ -337,8 +350,9 @@ while n_gen_update < N_ITER:
             for p in dis.parameters():
                 p.requires_grad = True
 
-            total_time += time.time() - _t
+        total_time += time.time() - _t
 
+        if UPDATE_FREQUENCY==1 or (n_iteration_t+1)%UPDATE_FREQUENCY == 0:
             if n_gen_update%EVAL_FREQ == 1:
                 if INCEPTION_SCORE_FLAG:
                     gen_inception_score = get_inception_score()[0]

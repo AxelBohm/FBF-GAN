@@ -60,6 +60,7 @@ parser.add_argument('-m', '--mode', choices=('gan', 'ns-gan', 'wgan'), default='
 parser.add_argument('-c', '--clip', default=0.01, type=float)
 parser.add_argument('-p', '--prox', choices=('1norm'), default='1norm')
 parser.add_argument('-rp', '--reg-param', default=0, type=float)
+parser.add_argument('-sn', '--spectral-norm', action='store_true')
 parser.add_argument('-d', '--distribution', choices=('normal', 'uniform'), default='normal')
 parser.add_argument('--batchnorm-dis', action='store_true')
 parser.add_argument('--seed', default=1318, type=int)
@@ -68,6 +69,7 @@ parser.add_argument('--inception-score', action='store_true')
 parser.add_argument('--default', action='store_true')
 parser.add_argument('--test', action='store_true')
 parser.add_argument('--inertia', default=0.0, type=float)
+parser.add_argument('-pi', '--power-iter', default=1, type=int)
 args = parser.parse_args()
 
 CUDA = True #args.cuda
@@ -79,9 +81,11 @@ INCEPTION_SCORE_FLAG = args.inception_score
 CLIP = args.clip
 PROX = args.prox
 REG_PARAM = args.reg_param
+SPEC_NORM = args.spectral_norm
 INERTIA = args.inertia
 TEST = args.test
 DEFAULT = args.default
+POWER_ITER = args.power_iter
 
 SEED = args.seed
 torch.manual_seed(SEED)
@@ -90,7 +94,6 @@ np.random.seed(SEED)
 # It is really important to set different learning rates for the discriminator and generator
 LEARNING_RATE_G = args.learning_rate_gen
 LEARNING_RATE_D = args.learning_rate_dis
-BATCH_SIZE = args.batch_size
 
 if TEST:
     config = "config/hyperparams_test_dcgan_wgan_fbfadam.json"
@@ -99,13 +102,20 @@ if TEST:
         data = json.load(f)
     args = argparse.Namespace(**data)
 
-if DEFAULT:
-    config = "config/default_dcgan_wgan_fbfadam.json"
-
+if args.default:
+    if args.model == 'resnet' and args.gradient_penalty != 0:
+        config = "config/default_resnet_wgangp_fbfadam.json"
+    elif args.model == 'dcgan' and args.gradient_penalty != 0:
+        config = "config/default_dcgan_wgangp_fbfadam.json"
+    elif args.model == 'dcgan' and args.gradient_penalty == 0:
+        config = "config/default_dcgan_wgan_fbfadam.json"
+    else:
+        raise ValueError("Not default config available for this.")
     with open(config) as f:
         data = json.load(f)
     args = argparse.Namespace(**data)
 
+BATCH_SIZE = args.batch_size
 
 N_ITER = args.num_iter
 BETA_1 = args.beta1
@@ -127,7 +137,12 @@ n_gen_update = 0
 n_dis_update = 0
 total_time = 0
 
-if GRADIENT_PENALTY:
+if GRADIENT_PENALTY and SPEC_NORM :
+    OUTPUT_PATH = os.path.join(OUTPUT_PATH, '%s_%s-gp-sn' % (MODEL, MODE),
+                               'pi=%i/%s/lrd=%.1e_lrg=%.1e/inertia=%.2f/s%i/%i' % (POWER_ITER, 'fbf_adam',
+                                                                LEARNING_RATE_D, LEARNING_RATE_G,
+                                                                INERTIA, SEED, int(time.time())))
+elif GRADIENT_PENALTY:
     OUTPUT_PATH = os.path.join(OUTPUT_PATH, '%s_%s-gp' % (MODEL, MODE),
                                '%s/lrd=%.1e_lrg=%.1e/inertia=%.2f/s%i/%i' % ('fbf_adam',
                                                                 LEARNING_RATE_D, LEARNING_RATE_G,
@@ -137,11 +152,17 @@ elif REG_PARAM:
                                '%s/lrd=%.1e_lrg=%.1e/rp=%.1e/inertia=%.2f/s%i/%i' % ('fbf_adam',
                                                                 LEARNING_RATE_D, LEARNING_RATE_G, REG_PARAM,
                                                                 INERTIA, SEED, int(time.time())))
+elif SPEC_NORM:
+    OUTPUT_PATH = os.path.join(OUTPUT_PATH, '%s_%s-sn' % (MODEL, MODE),
+                               'pi=%i/%s/lrd=%.1e_lrg=%.1e/inertia=%.2f/s%i/%i' % (POWER_ITER, 'fbf_adam',
+                                                                LEARNING_RATE_D, LEARNING_RATE_G,
+                                                                INERTIA, SEED, int(time.time())))
 else:
     OUTPUT_PATH = os.path.join(OUTPUT_PATH, '%s_%s' % (MODEL, MODE),
                                '%s/lrd=%.1e_lrg=%.1e/inertia=%.2f/s%i/%i' % ('fbf_adam',
                                                                 LEARNING_RATE_D, LEARNING_RATE_G,
                                                                 INERTIA, SEED, int(time.time())))
+print OUTPUT_PATH
 
 if TENSORBOARD_FLAG:
     from tensorboardX import SummaryWriter
@@ -255,6 +276,9 @@ numel_weights = sum(p.numel() for p in dis.parameters())
 n_iteration_t = 0
 gen_inception_score = 0
 gen_fid_score = 0
+# initialize eigenvectors
+len_params = sum(1 for _ in dis.parameters())
+u = [None] * len_params
 while n_gen_update < N_ITER:
     t = time.time()
     avg_loss_G = 0
@@ -295,13 +319,16 @@ while n_gen_update < N_ITER:
             dis_optimizer.extrapolation()
             if MODE == 'wgan':
                 nonzeros = 0.
-                for p in dis.parameters():
+                for i, (param_type, p) in enumerate(dis.state_dict().items()):
                     if REG_PARAM:
                         if PROX == '1norm':
                             p.data = utils.prox_1norm(p.data, REG_PARAM*LEARNING_RATE_D)
                             nonzeros += p.nonzero().size(0)
                         else:
                             raise("not implemented")
+                    elif SPEC_NORM:
+                        if 'weight' in param_type:
+                            p.data, u[i] = utils.spectral_normalize(p.data, u[i], iter = POWER_ITER)
                     elif not GRADIENT_PENALTY:
                         p.data.clamp_(-CLIP, CLIP)
         else:

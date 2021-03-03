@@ -1,7 +1,7 @@
 {
    "batch_size":64,
    "model":"resnet",
-   "num_iter":500000,
+   "num_iter":250000,
    "beta2":0.9,
    "ema":0.9999,
    "num_latent":128,
@@ -12,10 +12,10 @@
    "mode":"wgan",
    "seed":1318,
    "beta1":0.5,
-   "learning_rate_dis":2e-04,
+   "learning_rate_dis":5e-04,
    "distribution":"normal",
    "initialization":"normal",
-   "learning_rate_gen":2e-05,
+   "learning_rate_gen":5e-05,
    "num_filters_gen":128,
    "num_filters_dis":128
 }

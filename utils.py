@@ -29,6 +29,8 @@ import torch.autograd as autograd
 import torch.nn as nn
 import numpy as np
 from torch import where, add, abs, zeros_like, ones_like
+import torch.nn.functional as F
+import pdb
 
 def clip_weights(params, clip=0.01):
     for p in params:
@@ -78,3 +80,27 @@ def prox_1norm(data, lam):
     # alternative to compute prox via Moreau decomposition
     # p.data = torch.add(p.data, -l, torch.clamp(torch.mul(p.data, 1/l), -1, 1))
     return data
+
+
+def spectral_normalize(W, u, iter=1):
+
+    sigma, u = max_singular_value(W.reshape(W.shape[0], -1), u, iter)
+
+    return W/sigma, u
+
+
+def max_singular_value(W, u, iter):
+    """ computes largest singular value of rectangular tensor
+    """
+    
+    if u is None:
+        u = torch.randn(size=(1, W.shape[0])).cuda(0)
+
+    for _ in range(iter):
+        v = F.normalize(torch.matmul(u, W))
+        u = F.normalize(torch.matmul(v, W.t()))
+    sigma = torch.matmul(u, torch.matmul(W, v.t()))[0][0]
+
+    return sigma, u
+        
+

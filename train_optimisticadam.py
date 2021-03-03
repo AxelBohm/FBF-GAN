@@ -63,6 +63,7 @@ parser.add_argument('-m', '--mode', choices=('gan','ns-gan', 'wgan'), default='w
 parser.add_argument('-c', '--clip', default=0.01, type=float)
 parser.add_argument('-p', '--prox', choices=('1norm'), default='1norm')
 parser.add_argument('-rp', '--reg-param', default=0, type=float)
+parser.add_argument('-sn', '--spectral-norm', action='store_true')
 parser.add_argument('-d', '--distribution', choices=('normal', 'uniform'), default='normal')
 parser.add_argument('--batchnorm-dis', action='store_true')
 parser.add_argument('--seed', default=1234, type=int)
@@ -78,8 +79,16 @@ OUTPUT_PATH = args.output
 TENSORBOARD_FLAG = args.tensorboard
 INCEPTION_SCORE_FLAG = args.inception_score
 
-
 SEED = args.seed
+torch.manual_seed(SEED)
+np.random.seed(SEED)
+
+ # It is really important to set different learning rates for the discriminator and generator
+LEARNING_RATE_G = args.learning_rate_gen
+LEARNING_RATE_D = args.learning_rate_dis
+REG_PARAM = args.reg_param
+PROX = args.prox
+SPEC_NORM = args.spectral_norm
 
 if args.default:
     if args.model == 'resnet' and args.gradient_penalty != 0:
@@ -94,13 +103,8 @@ if args.default:
         data = json.load(f)
     args = argparse.Namespace(**data)
 
- # It is really important to set different learning rates for the discriminator and generator
 BATCH_SIZE = args.batch_size
 N_ITER = args.num_iter
-LEARNING_RATE_G = args.learning_rate_gen
-LEARNING_RATE_D = args.learning_rate_dis
-REG_PARAM = args.reg_param
-PROX = args.prox
 BETA_1 = args.beta1
 BETA_2 = args.beta2
 BETA_EMA = args.ema
@@ -117,18 +121,34 @@ RESOLUTION = 32
 N_CHANNEL = 3
 START_EPOCH = 0
 EVAL_FREQ = 10000
-torch.manual_seed(SEED)
-np.random.seed(SEED)
 n_gen_update = 0
 n_dis_update = 0
 total_time = 0
 
-if GRADIENT_PENALTY:
-    OUTPUT_PATH = os.path.join(OUTPUT_PATH, '%s_%s-gp'%(MODEL, MODE), '%s/lrd=%.1e_lrg=%.1e/s%i/%i'%('optimisticadam', LEARNING_RATE_D, LEARNING_RATE_G, SEED, int(time.time())))
+if GRADIENT_PENALTY and SPEC_NORM:
+    OUTPUT_PATH = os.path.join(OUTPUT_PATH, '%s_%s-gp-sn' % (MODEL, MODE),
+                               '%s/lrd=%.1e_lrg=%.1e/s%i/%i' % ('optimisticadam',
+                                                                LEARNING_RATE_D, LEARNING_RATE_G, SEED,
+                                                                int(time.time())))
+elif GRADIENT_PENALTY:
+    OUTPUT_PATH = os.path.join(OUTPUT_PATH, '%s_%s-gp' % (MODEL, MODE),
+                               '%s/lrd=%.1e_lrg=%.1e/s%i/%i' % ('optimisticadam',
+                                                                LEARNING_RATE_D, LEARNING_RATE_G, SEED,
+                                                                int(time.time())))
+elif SPEC_NORM:
+    OUTPUT_PATH = os.path.join(OUTPUT_PATH, '%s_%s-sn' % (MODEL, MODE),
+                               '%s/lrd=%.1e_lrg=%.1e/s%i/%i' % ('optimisticadam',
+                                                                LEARNING_RATE_D, LEARNING_RATE_G, SEED,
+                                                                int(time.time())))
 elif REG_PARAM:
-    OUTPUT_PATH = os.path.join(OUTPUT_PATH, '%s_%s-prox'%(MODEL, MODE), '%s/lrd=%.1e_lrg=%.1e/rp=%.1e/s%i/%i'%('optimisticadam', LEARNING_RATE_D, LEARNING_RATE_G, REG_PARAM, SEED, int(time.time())))
+    OUTPUT_PATH = os.path.join(OUTPUT_PATH, '%s_%s-prox' % (MODEL, MODE),
+                               '%s/lrd=%.1e_lrg=%.1e/rp=%.1e/s%i/%i' % ('optimisticadam',
+                                                                        LEARNING_RATE_D, LEARNING_RATE_G,
+                                                                        REG_PARAM, SEED, int(time.time())))
 else:
-    OUTPUT_PATH = os.path.join(OUTPUT_PATH, '%s_%s'%(MODEL, MODE), '%s/lrd=%.1e_lrg=%.1e/s%i/%i'%('optimisticadam', LEARNING_RATE_D, LEARNING_RATE_G, SEED, int(time.time())))
+    OUTPUT_PATH = os.path.join(OUTPUT_PATH, '%s_%s' % (MODEL, MODE),
+                               '%s/lrd=%.1e_lrg=%.1e/s%i/%i' % ('optimisticadam', LEARNING_RATE_D,
+                                                                LEARNING_RATE_G, SEED, int(time.time())))
 
 if TENSORBOARD_FLAG:
     from tensorboardX import SummaryWriter
@@ -240,6 +260,10 @@ f_writter = csv.writer(f)
 print 'Training...'
 n_iteration_t = 0
 gen_inception_score = 0
+gen_fid_score = 0
+# initialize eigenvectors
+len_params = sum(1 for _ in dis.parameters())
+u = [None] * len_params
 while n_gen_update < N_ITER:
     t = time.time()
     avg_loss_G = 0
@@ -275,13 +299,16 @@ while n_gen_update < N_ITER:
         dis_optimizer.step()
         if MODE =='wgan':
             nonzeros = 0.
-            for p in dis.parameters():
+            for i, (param_type, p) in enumerate(dis.state_dict().items()):
                 if REG_PARAM:
                     if PROX == '1norm':
                         p.data = utils.prox_1norm(p.data, REG_PARAM*LEARNING_RATE_D)
                         nonzeros += p.nonzero().size(0)
                     else:
                         raise("not implemented")
+                elif SPEC_NORM:
+                    if 'weight' in param_type:
+                        p.data, u[i] = utils.spectral_normalize(p.data, u[i])
                 elif not GRADIENT_PENALTY:
                     p.data.clamp_(-CLIP, CLIP)
 
@@ -332,7 +359,9 @@ while n_gen_update < N_ITER:
     avg_loss_D /= num_samples
     avg_penalty /= num_samples
 
-    print 'Iter: %i, Loss Generator: %.4f, Loss Discriminator: %.4f, Penalty: %.2e, IS: %.2f, FID: %.2f, Time: %.4f'%(n_gen_update, avg_loss_G, avg_loss_D, avg_penalty, gen_inception_score, gen_fid_score, time.time() - t)
+    print 'Iter: %i, Loss Generator: %.4f, Loss Discriminator: %.4f, Penalty: %.2e, IS: %.2f, FID: %.2f, Time: %.4f' % (
+        n_gen_update, avg_loss_G, avg_loss_D, avg_penalty,
+        gen_inception_score, gen_fid_score, time.time() - t)
 
     f_writter.writerow((n_gen_update, avg_loss_G, avg_loss_D, avg_penalty, time.time() - t))
     f.flush()

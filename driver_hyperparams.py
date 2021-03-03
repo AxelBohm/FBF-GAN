@@ -1,7 +1,8 @@
 import os
 import time
 
-seed = [1318, 2589, 3017, 9001]
+seed = [42, 1318, 2589, 3017, 9001]
+# seed = [42, 1318, 2589, 3017]
 # inertia = [0.0, 0.05, 0.1, 0.2, 0.3]
 # stepsz_dis = [1e-04, 5e-04, 9e-04] #[1e-4, 2e-4, 3e-4]
 # stepsz_gen = [1e-05, 5e-05, 9e-05] #[1e-5, 2e-5, 3e-5]
@@ -24,10 +25,24 @@ seed = [1318, 2589, 3017, 9001]
 # stepsz_dis = [1e-04, 2e-04, 5e-04] #[1e-4, 2e-4, 3e-4]
 # stepsz_gen = [1e-05, 2e-05, 5e-05] #[1e-5, 2e-5, 3e-5]
 
-base_command = "python train_adam.py output --update-frequency 1 --default --inception-score --model dcgan -gp 0 --cuda -rp 0.0001 -lrd 2e-04 -lrg 2e-05 "
+# base_command = ""
 # base_command = "python train_optimisticadam.py output --default --inception-score --model dcgan -gp 0 --cuda -lrd 5e-04 -lrg 5e-05 -rp 0.0001 "
 # commands = [base_command+"-lrd %.2e -lrg %.2e" % (lrd, lrg) for (lrd, lrg) in zip(stepsz_dis, stepsz_gen)]
-commands = [base_command+"--seed %i " % s for s in seed]
+
+# methods = ["train_extraadam.py", "train_fbfadam.py"]
+# commands = ["python %s output --default --inception-score --model resnet -gp 10 --cuda --seed %i%s" % (m,s,sn) for m in methods for s in seed for sn in [" -sn", ""]] 
+# commands = ["python %s output --default --inception-score --model resnet -gp 10 --cuda --seed %i -sn" % (m,s) for m in methods for s in seed] 
+
+# stepsz_dis = [1e-04, 2e-04, 5e-04]
+# stepsz_gen = [1e-05, 2e-05, 5e-05]
+# commands = ["python train_optimisticadam.py  output --default --inception-score --model resnet -gp 10 --cuda --seed 9001 -sn -lrd %.2e -lrg %.2e" % (lrd, lrg) for (lrd, lrg) in zip(stepsz_dis, stepsz_gen)]
+
+# commands = ["python train_optimisticadam.py  output --default --inception-score --model resnet -gp 10 --cuda --seed %i -lrd 5e-04 -lrg 5e-05" % s for s in seed]
+# commands = ["python train_adam.py  output --default -u 1 --inception-score --model resnet -gp 10 --cuda --seed %i -lrd 2e-04 -lrg 2e-05" % s for s in seed]
+# commands = commands + ["python train_fbfadam.py  output --default --inception-score --model resnet -gp 10 --cuda --seed %i -lrd 5e-04 -lrg 5e-05" % s for s in seed]
+
+# power_iter = [10]
+commands = ["python train_fbfadam.py output --default --inception-score --model resnet -gp 10 -sn --cuda --seed %i -lrd 2e-04 -lrg 2e-05 -pi 1" % s for s in seed]
 
 print commands
 time.sleep(3)

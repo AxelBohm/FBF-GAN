@@ -59,6 +59,7 @@ parser.add_argument('-m', '--mode', choices=('gan', 'ns-gan', 'wgan'), default='
 parser.add_argument('-c', '--clip', default=0.01, type=float)
 parser.add_argument('-p', '--prox', choices=('1norm'), default='1norm')
 parser.add_argument('-rp', '--reg-param', default=0, type=float)
+parser.add_argument('-sn', '--spectral-norm', action='store_true')
 parser.add_argument('-d', '--distribution', choices=('normal', 'uniform'), default='normal')
 parser.add_argument('--batchnorm-dis', action='store_true')
 parser.add_argument('--seed', default=1234, type=int)
@@ -83,6 +84,7 @@ LEARNING_RATE_G = args.learning_rate_gen
 LEARNING_RATE_D = args.learning_rate_dis
 PROX = args.prox
 REG_PARAM = args.reg_param
+SPEC_NORM = args.spectral_norm
 
 if args.default:
     if args.model == 'resnet' and args.gradient_penalty != 0:
@@ -119,8 +121,18 @@ n_gen_update = 0
 n_dis_update = 0
 total_time = 0
 
-if GRADIENT_PENALTY:
+if GRADIENT_PENALTY and SPEC_NORM:
+    OUTPUT_PATH = os.path.join(OUTPUT_PATH, '%s_%s-gp-sn' % (MODEL, MODE),
+                               '%s/lrd=%.1e_lrg=%.1e/s%i/%i' % ('extra_adam',
+                                                                LEARNING_RATE_D, LEARNING_RATE_G, SEED,
+                                                                int(time.time())))
+elif GRADIENT_PENALTY:
     OUTPUT_PATH = os.path.join(OUTPUT_PATH, '%s_%s-gp' % (MODEL, MODE),
+                               '%s/lrd=%.1e_lrg=%.1e/s%i/%i' % ('extra_adam',
+                                                                LEARNING_RATE_D, LEARNING_RATE_G, SEED,
+                                                                int(time.time())))
+elif SPEC_NORM:
+    OUTPUT_PATH = os.path.join(OUTPUT_PATH, '%s_%s-sn' % (MODEL, MODE),
                                '%s/lrd=%.1e_lrg=%.1e/s%i/%i' % ('extra_adam',
                                                                 LEARNING_RATE_D, LEARNING_RATE_G, SEED,
                                                                 int(time.time())))
@@ -244,6 +256,9 @@ print 'Training...'
 n_iteration_t = 0
 gen_inception_score = 0
 gen_fid_score = 0
+# initialize eigenvectors
+len_params = sum(1 for _ in dis.parameters())
+u = [None] * len_params
 while n_gen_update < N_ITER:
     t = time.time()
     avg_loss_G = 0
@@ -305,13 +320,16 @@ while n_gen_update < N_ITER:
 
         if MODE == 'wgan':
             nonzeros = 0.
-            for p in dis.parameters():
+            for i, (param_type, p) in enumerate(dis.state_dict().items()):
                 if REG_PARAM:
                     if PROX == '1norm':
                         p.data = utils.prox_1norm(p.data, REG_PARAM*LEARNING_RATE_D)
                         nonzeros += p.nonzero().size(0)
                     else:
                         raise("not implemented")
+                elif SPEC_NORM:
+                    if 'weight' in param_type:
+                        p.data, u[i] = utils.spectral_normalize(p.data, u[i])
                 elif not GRADIENT_PENALTY:
                     p.data.clamp_(-CLIP, CLIP)
 
